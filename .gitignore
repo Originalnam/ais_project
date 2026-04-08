@@ -1,0 +1,31 @@
+# Environment
+.venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Data — never commit raw or processed files
+data/raw/
+data/processed/
+*.csv
+*.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Azure
+*.publishsettings
