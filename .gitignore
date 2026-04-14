@@ -13,6 +13,7 @@ build/
 # Data — never commit raw or processed files
 data/raw/
 data/processed/
+data/*.db
 *.csv
 *.zip
 
@@ -29,3 +30,9 @@ Thumbs.db
 
 # Azure
 *.publishsettings
+
+# Claude Code
+.claude/
+
+# Viz generated data
+viz/data/

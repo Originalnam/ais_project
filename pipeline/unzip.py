@@ -1,9 +1,11 @@
 import os
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-READ_DIR = os.path.join(os.path.dirname(__file__), "raw")
-WRITE_DIR = os.path.join(os.path.dirname(__file__), "raw\unzipped")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+READ_DIR = str(_PROJECT_ROOT / "raw")
+WRITE_DIR = str(_PROJECT_ROOT / "data" / "raw" / "unzipped")
 
 print(f"Reading zip files from: {READ_DIR}")
 print(f"Extracting zip files to: {WRITE_DIR}")

@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Port Activity Dashboard — Danish Ports Feb 2026</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  /* ── Reset / base ────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f6fa;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  header {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  header h1 { font-size: 1.2rem; font-weight: 600; }
+  header p  { font-size: 0.82rem; opacity: 0.65; }
+
+  /* ── Port selector ───────────────────────────────────────────────────── */
+  #port-bar {
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 10px 32px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .port-btn {
+    padding: 5px 16px;
+    border-radius: 20px;
+    border: 1.5px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    text-transform: capitalize;
+  }
+  .port-btn:hover   { border-color: var(--c); color: var(--c); }
+  .port-btn.active  { background: var(--c); border-color: var(--c); color: #fff; }
+
+  /* ── KPI strip ───────────────────────────────────────────────────────── */
+  #kpi-strip {
+    display: flex;
+    gap: 16px;
+    padding: 20px 32px 0;
+    flex-wrap: wrap;
+  }
+  .kpi-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 22px;
+    flex: 1 1 160px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .kpi-card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: #888; }
+  .kpi-card .value { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
+  .kpi-card .sub   { font-size: 0.75rem; color: #aaa; margin-top: 2px; }
+
+  /* ── Grid ────────────────────────────────────────────────────────────── */
+  #grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    padding: 16px 32px 32px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .card h2 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #888;
+    margin-bottom: 14px;
+  }
+
+  #card-trend  { grid-column: 1; grid-row: 1; }
+  #card-donut  { grid-column: 2; grid-row: 1 / 3; }
+  #card-donut h2 { text-align: center; }
+  #card-donut svg { display: block; margin: 0 auto; }
+  #card-heatmap{ grid-column: 1; grid-row: 2; }
+
+  /* ── Tooltip ─────────────────────────────────────────────────────────── */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: rgba(26,26,46,.88);
+    color: #fff;
+    font-size: 0.78rem;
+    padding: 7px 11px;
+    border-radius: 6px;
+    display: none;
+    z-index: 9999;
+    line-height: 1.5;
+    max-width: 200px;
+  }
+
+  /* ── SVG axes ────────────────────────────────────────────────────────── */
+  .axis text { font-size: 10px; fill: #888; }
+  .axis path, .axis line { stroke: #e0e0e0; }
+  .grid line { stroke: #f0f0f0; }
+  .grid path { stroke: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Port Activity Dashboard</h1>
+  <p>Danish Maritime Authority · AIS data · February 2026</p>
+</header>
+
+<div id="port-bar"></div>
+<div id="kpi-strip"></div>
+
+<div id="grid">
+  <div class="card" id="card-trend">
+    <h2>Daily vessel count</h2>
+    <div id="chart-trend"></div>
+  </div>
+  <div class="card" id="card-donut">
+    <h2>Vessel type mix</h2>
+    <div id="chart-donut"></div>
+  </div>
+  <div class="card" id="card-heatmap">
+    <h2>Congestion heatmap &mdash; avg vessels by hour &amp; day of week</h2>
+    <div id="chart-heatmap"></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ── Tab-10 colour palette (matches matplotlib/notebook) ──────────────────────
+const TYPE_COLORS = {
+  "Cargo":         "#1f77b4",
+  "Tanker":        "#ff7f0e",
+  "Passenger":     "#2ca02c",
+  "Fishing":       "#d62728",
+  "Tug":           "#9467bd",
+  "Pleasure Craft":"#8c564b",
+  "HSC":           "#e377c2",
+  "SAR":           "#7f7f7f",
+  "Other":         "#bcbd22",
+};
+
+const PORT_COLORS = d3.schemeTableau10;
+const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const tooltip = document.getElementById("tooltip");
+
+function showTip(html, event) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+  moveTip(event);
+}
+function moveTip(event) {
+  tooltip.style.left = (event.clientX + 14) + "px";
+  tooltip.style.top  = (event.clientY - 10) + "px";
+}
+function hideTip() { tooltip.style.display = "none"; }
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+d3.json("data/dashboard.json").then(data => {
+  const ports = data.ports;
+  let activePorts = [ports[0]];
+
+  // ── Port selector (multi-select) ───────────────────────────────────────────
+  const portBar = document.getElementById("port-bar");
+  ports.forEach((p, i) => {
+    const btn = document.createElement("button");
+    btn.className = "port-btn" + (i === 0 ? " active" : "");
+    btn.textContent = p.charAt(0).toUpperCase() + p.slice(1);
+    btn.dataset.port = p;
+    btn.style.setProperty("--c", PORT_COLORS[i % PORT_COLORS.length]);
+    btn.addEventListener("click", () => {
+      const idx = activePorts.indexOf(p);
+      if (idx === -1) {
+        activePorts.push(p);
+        btn.classList.add("active");
+      } else {
+        if (activePorts.length === 1) return; // keep at least one selected
+        activePorts.splice(idx, 1);
+        btn.classList.remove("active");
+      }
+      update(activePorts);
+    });
+    portBar.appendChild(btn);
+  });
+
+  // ── KPI cards ──────────────────────────────────────────────────────────────
+  function renderKPIs(activePorts) {
+    const strip = document.getElementById("kpi-strip");
+    strip.innerHTML = "";
+
+    const sums = activePorts.map(p => data.summary.find(d => d.port === p) || {});
+    const allDaily = activePorts.flatMap(p => data.daily_traffic.filter(d => d.port === p));
+
+    // Combine daily vessel counts across ports per date
+    const dateMap = {};
+    allDaily.forEach(d => { dateMap[d.date] = (dateMap[d.date] || 0) + d.vessel_count; });
+    const combinedDaily = Object.entries(dateMap).map(([date, vessel_count]) => ({ date, vessel_count }));
+    const maxDay = d3.greatest(combinedDaily, d => d.vessel_count);
+
+    const totalVesselHours = d3.sum(sums, s => s.total_vessel_hours ?? 0);
+    const peakHourly = d3.sum(sums, s => s.peak_hourly_count ?? 0);
+    const dwellSamples = sums.filter(s => s.avg_dwell_minutes != null);
+    const avgDwell = dwellSamples.length ? d3.mean(dwellSamples, s => s.avg_dwell_minutes) : null;
+
+    const kpis = [
+      { label: "Total vessel-hours", value: d3.format(",")(totalVesselHours), sub: "Feb 2026" },
+      { label: "Peak hourly count",  value: d3.format(",")(peakHourly),       sub: "vessels in one hour" },
+      { label: "Avg dwell time",     value: avgDwell != null
+          ? (avgDwell >= 60
+              ? (avgDwell / 60).toFixed(1) + " h"
+              : avgDwell.toFixed(0) + " min")
+          : "—",                                                               sub: "per vessel visit" },
+      { label: "Busiest day",        value: maxDay ? maxDay.date.slice(5) : "—",
+                                     sub: maxDay ? d3.format(",")(maxDay.vessel_count) + " vessels" : "" },
+    ];
+
+    kpis.forEach(k => {
+      const card = document.createElement("div");
+      card.className = "kpi-card";
+      card.innerHTML = `<div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub}</div>`;
+      strip.appendChild(card);
+    });
+  }
+
+  // ── Trend chart — stacked bar ──────────────────────────────────────────────
+  function renderTrend(activePorts) {
+    const el = document.getElementById("chart-trend");
+    el.innerHTML = "";
+
+    // Collect all unique dates
+    const dateSet = new Set();
+    activePorts.forEach(p => data.daily_traffic.filter(d => d.port === p).forEach(d => dateSet.add(d.date)));
+    const dates = [...dateSet].sort();
+
+    // Build one row per date with a key per port
+    const byDate = dates.map(dateStr => {
+      const row = { dateStr, date: new Date(dateStr + "T12:00:00") };
+      activePorts.forEach(p => {
+        const found = data.daily_traffic.find(d => d.port === p && d.date === dateStr);
+        row[p] = found ? found.vessel_count : 0;
+      });
+      return row;
+    });
+
+    const W = el.getBoundingClientRect().width || 640;
+    const H = 220;
+    const margin = { top: 16, right: 20, bottom: 30, left: 44 };
+    const iW = W - margin.left - margin.right;
+    const iH = H - margin.top - margin.bottom;
+
+    const series = d3.stack().keys(activePorts)(byDate);
+
+    const x = d3.scaleBand().domain(dates).range([0, iW]).padding(0.15);
+    const maxY = d3.max(byDate, row => activePorts.reduce((s, p) => s + row[p], 0));
+    const y = d3.scaleLinear().domain([0, maxY * 1.1]).range([iH, 0]);
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Grid
+    g.append("g").attr("class","grid")
+      .call(d3.axisLeft(y).tickSize(-iW).tickFormat("").ticks(5));
+
+    // Stacked bars
+    series.forEach((s, si) => {
+      const portIdx = ports.indexOf(activePorts[si]);
+      const color = PORT_COLORS[portIdx % PORT_COLORS.length];
+      g.selectAll(null).data(s).join("rect")
+        .attr("x", d => x(d.data.dateStr))
+        .attr("y", d => y(d[1]))
+        .attr("height", d => Math.max(0, y(d[0]) - y(d[1])))
+        .attr("width", x.bandwidth())
+        .attr("fill", color)
+        .on("mouseover", (event, d) => {
+          const count = d[1] - d[0];
+          showTip(`<b>${d3.timeFormat("%b %d")(d.data.date)}</b><br>${activePorts[si]}: ${d3.format(",")(count)} vessels`, event);
+        })
+        .on("mousemove", moveTip)
+        .on("mouseout",  hideTip);
+    });
+
+    // Axes
+    const tickDates = dates.filter((_, i) => i % 7 === 0);
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+      .call(d3.axisBottom(x).tickValues(tickDates).tickFormat(d => d3.timeFormat("%b %d")(new Date(d + "T12:00:00"))));
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(5));
+
+    // Legend (top-right, only when multiple ports)
+    if (activePorts.length > 1) {
+      const lg = svg.append("g").attr("transform", `translate(${W - margin.right - 10}, 4)`);
+      [...activePorts].reverse().forEach((p, i) => {
+        const portIdx = ports.indexOf(p);
+        const color = PORT_COLORS[portIdx % PORT_COLORS.length];
+        const row = lg.append("g").attr("transform", `translate(0,${i * 14})`);
+        row.append("rect").attr("x", -9).attr("width", 9).attr("height", 9).attr("rx", 2).attr("fill", color);
+        row.append("text").attr("x", -13).attr("y", 8).attr("text-anchor","end")
+          .attr("font-size","9px").attr("fill","#555")
+          .text(p.charAt(0).toUpperCase() + p.slice(1));
+      });
+    }
+  }
+
+  // ── Donut chart ────────────────────────────────────────────────────────────
+  function renderDonut(activePorts) {
+    const el = document.getElementById("chart-donut");
+    el.innerHTML = "";
+
+    // Aggregate type counts across selected ports
+    const typeMap = {};
+    activePorts.forEach(p => {
+      data.type_distribution.filter(d => d.port === p).forEach(d => {
+        typeMap[d.vessel_type] = (typeMap[d.vessel_type] || 0) + d.count;
+      });
+    });
+    const types = Object.entries(typeMap)
+      .map(([vessel_type, count]) => ({ vessel_type, count }))
+      .sort((a, b) => b.count - a.count);
+
+    const W = 280, R = 90;
+    const donutCY = R + 24;
+    const cols = 2;
+    const colGap = 16;
+    const legendMargin = 25 ;                // inset to match donut circle's visual margin
+    const blockW = 2 * R;
+    const colW = (blockW - colGap) / 2;        // 74px per column
+    const legendItemH = 15;
+    const legendTopPad = 16;
+    const legendRows = Math.ceil(types.length / cols);
+    const H = donutCY + R + legendTopPad + legendRows * legendItemH + 12;
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${W/2},${donutCY})`);
+
+    const pie = d3.pie().value(d => d.count).sort(null);
+    const arc = d3.arc().innerRadius(R * 0.55).outerRadius(R);
+    const arcHover = d3.arc().innerRadius(R * 0.55).outerRadius(R + 6);
+    const total = d3.sum(types, d => d.count);
+
+    g.selectAll("path").data(pie(types)).join("path")
+      .attr("d", arc)
+      .attr("fill", d => TYPE_COLORS[d.data.vessel_type] || "#ccc")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 1.5)
+      .on("mouseover", function(event, d) {
+        d3.select(this).attr("d", arcHover);
+        const pct = (d.data.count / total * 100).toFixed(1);
+        showTip(`<b>${d.data.vessel_type}</b><br>${d3.format(",")(d.data.count)} vessels (${pct}%)`, event);
+      })
+      .on("mousemove", moveTip)
+      .on("mouseout",  function() { d3.select(this).attr("d", arc); hideTip(); });
+
+    g.append("text").attr("text-anchor","middle").attr("dy","-0.2em")
+      .attr("font-size","1.4rem").attr("font-weight","700")
+      .text(d3.format(",")(total));
+    g.append("text").attr("text-anchor","middle").attr("dy","1.1em")
+      .attr("font-size","0.68rem").attr("fill","#999")
+      .text("vessel-days");
+
+    // Legend — 2 columns, block centered in SVG; lone last item centered in block
+    const legendY = donutCY + R + legendTopPad;
+    const legendX = W / 2 - R + legendMargin;   // 58px — inset from donut circle edge
+    const legend = svg.append("g").attr("transform", `translate(${legendX},${legendY})`);
+    types.forEach((d, i) => {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const itemsInRow = Math.min(cols, types.length - row * cols);
+      // If this is a lone last item, center it within the block width
+      const xOffset = itemsInRow < cols ? (blockW - colW) / 2 : col * (colW + colGap);
+      const lg = legend.append("g").attr("transform", `translate(${xOffset},${row * legendItemH})`);
+      lg.append("rect").attr("width", 9).attr("height", 9).attr("rx", 2)
+        .attr("fill", TYPE_COLORS[d.vessel_type] || "#ccc");
+      lg.append("text").attr("x", 13).attr("y", 8).attr("font-size","10px").attr("fill","#555")
+        .text(d.vessel_type);
+    });
+  }
+
+  // ── Heatmap ────────────────────────────────────────────────────────────────
+  function renderHeatmap(activePorts) {
+    const el = document.getElementById("chart-heatmap");
+    el.innerHTML = "";
+
+    // Sum avg_vessel_count across selected ports per (dow, hour) cell
+    const cellMap = {};
+    activePorts.forEach(p => {
+      data.congestion_heatmap.filter(d => d.port === p).forEach(d => {
+        const key = `${d.dow}-${d.hour}`;
+        if (!cellMap[key]) cellMap[key] = { dow: d.dow, hour: d.hour, val: 0 };
+        cellMap[key].val += d.avg_vessel_count;
+      });
+    });
+    const rows = Object.values(cellMap);
+    const minVal = d3.min(rows, d => d.val);
+    const maxVal = d3.max(rows, d => d.val);
+
+    const W = el.getBoundingClientRect().width || 640;
+    const margin = { top: 6, right: 20, bottom: 32, left: 40 };
+    const cellW = (W - margin.left - margin.right) / 24;
+    const cellH = 24;
+    const H = 7 * cellH + margin.top + margin.bottom;
+
+    // Use first selected port's color; fall back to a neutral blue for multi-port
+    const portIdx = activePorts.length === 1 ? ports.indexOf(activePorts[0]) : -1;
+    const baseColor = portIdx >= 0 ? PORT_COLORS[portIdx % PORT_COLORS.length] : "#4a6cf7";
+    const colorScale = d3.scaleSequential(
+      d3.interpolateRgb("#f5f6fa", baseColor)
+    ).domain([minVal, maxVal]);
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    rows.forEach(d => {
+      g.append("rect")
+        .attr("x", d.hour * cellW + 1).attr("y", d.dow * cellH + 1)
+        .attr("width", cellW - 2).attr("height", cellH - 2)
+        .attr("rx", 2)
+        .attr("fill", colorScale(d.val))
+        .on("mouseover", event => showTip(
+          `<b>${DOW[d.dow]}, ${String(d.hour).padStart(2,"0")}:00</b><br>Avg ${d.val.toFixed(1)} vessels`, event
+        ))
+        .on("mousemove", moveTip)
+        .on("mouseout",  hideTip);
+    });
+
+    d3.range(0, 24, 3).forEach(h => {
+      g.append("text").attr("x", h * cellW + cellW / 2).attr("y", 7 * cellH + 18)
+        .attr("text-anchor","middle").attr("font-size","10px").attr("fill","#888")
+        .text(String(h).padStart(2,"0") + ":00");
+    });
+
+    DOW.forEach((d, i) => {
+      g.append("text").attr("x", -6).attr("y", i * cellH + cellH / 2 + 4)
+        .attr("text-anchor","end").attr("font-size","10px").attr("fill","#888")
+        .text(d);
+    });
+  }
+
+  // ── Master update ──────────────────────────────────────────────────────────
+  function update(activePorts) {
+    renderKPIs(activePorts);
+    renderTrend(activePorts);
+    renderDonut(activePorts);
+    renderHeatmap(activePorts);
+  }
+
+  update(activePorts);
+});
+</script>
+</body>
+</html>
