@@ -51,28 +51,35 @@ DTYPE_MAP = {
 
 def load_day(date_str: str, chunksize: int | None = None) -> pd.DataFrame:
     """
-    Load one day of raw AIS data from the unzipped directory.
+    Load raw AIS data from the unzipped directory.
 
     Parameters
     ----------
     date_str : str
-        ISO date, e.g. ``"2026-02-01"``.
+        ``"YYYY-MM-DD"`` for a daily folder or ``"YYYY-MM"`` for a monthly
+        folder.  Monthly folders contain multiple CSV files (one per day in
+        the month); all are concatenated into a single DataFrame.
     chunksize : int, optional
-        If provided, reads in chunks and concatenates.  Defaults to reading
-        the full file in one pass (fine for exploration; use chunked mode for
-        large files to control peak RAM).
+        If provided, reads each file in chunks before concatenating.  Useful
+        for controlling peak RAM on large monthly files.
 
     Returns
     -------
     pd.DataFrame
-        Raw AIS records for the given day.  Timestamp column is parsed to
-        datetime and renamed from ``# Timestamp`` to ``Timestamp``.
+        Raw AIS records.  Timestamp column is parsed to datetime and renamed
+        from ``# Timestamp`` to ``Timestamp``.
     """
-    csv_path = UNZIPPED_DIR / f"aisdk-{date_str}" / f"aisdk-{date_str}.csv"
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Raw CSV not found: {csv_path}")
+    folder = UNZIPPED_DIR / f"aisdk-{date_str}"
+    if not folder.exists():
+        raise FileNotFoundError(f"Unzipped folder not found: {folder}")
 
-    log.info("Loading %s …", csv_path.name)
+    # Daily folders: aisdk-YYYY-MM-DD.csv
+    # Monthly folders: aisdk_YYYYMMDD.csv  (one file per day in the month)
+    csv_files = sorted(folder.glob("*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No CSV files in {folder}")
+
+    log.info("Loading %s (%d file(s)) …", date_str, len(csv_files))
 
     read_kwargs: dict = dict(
         usecols=USECOLS,
@@ -80,13 +87,19 @@ def load_day(date_str: str, chunksize: int | None = None) -> pd.DataFrame:
         low_memory=False,
         on_bad_lines="skip",
     )
-    if chunksize:
-        read_kwargs["chunksize"] = chunksize
-        df = pd.concat(
-            list(pd.read_csv(csv_path, **read_kwargs)), ignore_index=True
-        )
-    else:
-        df = pd.read_csv(csv_path, **read_kwargs)
+
+    parts: list[pd.DataFrame] = []
+    for csv_path in csv_files:
+        if chunksize:
+            read_kwargs["chunksize"] = chunksize
+            df_part = pd.concat(
+                list(pd.read_csv(csv_path, **read_kwargs)), ignore_index=True
+            )
+        else:
+            df_part = pd.read_csv(csv_path, **read_kwargs)
+        parts.append(df_part)
+
+    df = pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
 
     df.rename(columns={"# Timestamp": "Timestamp"}, inplace=True)
     df["Timestamp"] = pd.to_datetime(

@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aarhus Port — Vessel Movements · February 2026</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0d1a;
+      overflow: hidden;
+    }
+
+    /* ── Map ───────────────────────────────────────────────────────────────── */
+    #map { width: 100vw; height: 100vh; }
+
+    #vessel-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      pointer-events: none;
+      z-index: 400;
+    }
+
+    /* ── Header badge ──────────────────────────────────────────────────────── */
+    #header {
+      position: fixed;
+      top: 18px; left: 18px;
+      z-index: 1000;
+      background: rgba(10,10,25,.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 12px;
+      padding: 12px 18px;
+      color: #fff;
+    }
+    #header h1 { font-size: 15px; font-weight: 600; letter-spacing: .01em; color: #e8e8f0; }
+    #header p  { font-size: 11px; color: rgba(255,255,255,.45); margin-top: 3px; }
+    #header a  { font-size: 11px; color: rgba(123,167,232,.85); text-decoration: none; margin-top: 5px; display: block; }
+    #header a:hover { color: #7ba7e8; text-decoration: underline; }
+
+    /* ── Controls panel ────────────────────────────────────────────────────── */
+    #controls {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(10,10,25,.88);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 16px;
+      padding: 16px 22px 14px;
+      color: #fff;
+      min-width: 660px;
+      display: flex;
+      flex-direction: column;
+      gap: 11px;
+    }
+
+    .ctrl-row { display: flex; align-items: center; gap: 12px; }
+
+    /* Pause button — separate from speed controls */
+    #btn-pause {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,.12);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #btn-pause:hover { background: rgba(255,255,255,.22); }
+
+    /* Thin vertical divider between pause and speed buttons */
+    .btn-sep {
+      width: 1px; height: 20px;
+      background: rgba(255,255,255,.15);
+      flex-shrink: 0;
+      margin: 0 2px;
+    }
+
+    /* Speed selector buttons — one active at a time */
+    .speed-btn {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,.2);
+      background: transparent;
+      color: rgba(255,255,255,.5);
+      font-size: 11px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .speed-btn:hover { border-color: rgba(255,255,255,.5); color: rgba(255,255,255,.9); }
+    .speed-btn.active {
+      background: rgba(123,167,232,.25);
+      border-color: #7ba7e8;
+      color: #fff;
+    }
+
+    #time-display {
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #c8c8e0;
+      width: 110px;
+      flex-shrink: 0;
+      letter-spacing: .03em;
+    }
+
+    #slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,.18);
+      outline: none;
+      cursor: pointer;
+    }
+    #slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #7ba7e8;
+      cursor: pointer;
+    }
+    #slider::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #7ba7e8;
+      border: none;
+      cursor: pointer;
+    }
+
+    .ctrl-label {
+      font-size: 11px;
+      color: rgba(255,255,255,.45);
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      width: 44px;
+    }
+
+    .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .pill {
+      padding: 4px 11px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: transparent;
+      color: rgba(255,255,255,.55);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .pill:hover { border-color: rgba(255,255,255,.4); color: rgba(255,255,255,.85); }
+    .pill.active { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.4); color: #fff; }
+
+    /* Zone pills — colored accent */
+    .zone-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: transparent;
+      color: rgba(255,255,255,.5);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .zone-pill:hover { border-color: rgba(255,255,255,.35); color: rgba(255,255,255,.8); }
+    .zone-pill.active { border-color: var(--zc); color: #fff; background: rgba(255,255,255,.08); }
+    .zone-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* Type pills */
+    .type-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: transparent;
+      color: rgba(255,255,255,.5);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .type-pill:hover { border-color: rgba(255,255,255,.35); color: rgba(255,255,255,.8); }
+    .type-pill.active { border-color: rgba(255,255,255,.32); color: #fff; }
+    .type-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    /* Color-mode toggle */
+    #color-toggle {
+      padding: 4px 11px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.25);
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.75);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    #color-toggle:hover { background: rgba(255,255,255,.14); color: #fff; }
+
+    /* ── Vessel count badge ─────────────────────────────────────────────────── */
+    #vessel-count {
+      position: fixed;
+      top: 18px; right: 18px;
+      z-index: 1000;
+      background: rgba(10,10,25,.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 10px;
+      padding: 9px 14px;
+      color: rgba(255,255,255,.5);
+      font-size: 11px;
+    }
+    #vessel-count strong { color: #e8e8f0; font-variant-numeric: tabular-nums; }
+
+    /* ── Tooltip ────────────────────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed;
+      z-index: 2000;
+      pointer-events: none;
+      background: rgba(10,10,25,.92);
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.7;
+      max-width: 230px;
+      display: none;
+    }
+    #tooltip .tt-name { font-weight: 600; font-size: 13px; color: #e0e0f8; margin-bottom: 3px; }
+    #tooltip .tt-row  { color: rgba(255,255,255,.55); }
+    #tooltip .tt-row span { color: rgba(255,255,255,.88); }
+
+    /* ── Loading overlay ────────────────────────────────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      background: #0d0d1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      gap: 18px;
+    }
+    #loading p { font-size: 14px; color: rgba(255,255,255,.5); }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(255,255,255,.1);
+      border-top-color: #7ba7e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Zone label tooltip ────────────────────────────────────────────────── */
+    .zone-label {
+      background: rgba(10,10,25,.88) !important;
+      border-radius: 6px !important;
+      color: #c8d8f0 !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      padding: 4px 8px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,.5) !important;
+      white-space: nowrap;
+    }
+    .zone-label::before { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading vessel data…</p>
+  </div>
+
+  <div id="map"></div>
+  <canvas id="vessel-canvas"></canvas>
+
+  <div id="header">
+    <h1>Aarhus Port — Vessel Movements</h1>
+    <p>February 2026 · Danish Maritime Authority AIS</p>
+    <a href="aarhus_dashboard.html">Zone analytics →</a>
+  </div>
+
+  <div id="vessel-count">
+    <strong id="count-visible">—</strong> vessels visible
+  </div>
+
+  <div id="tooltip"></div>
+
+  <div id="controls">
+    <!-- Time row -->
+    <div class="ctrl-row">
+      <button id="btn-pause" title="Pause">&#9646;&#9646;</button>
+      <div class="btn-sep"></div>
+      <div class="btn-group">
+        <button class="speed-btn" data-speed="30" title="Slow (30 sim-min / real second)">&#9655;</button>
+        <button class="speed-btn active" data-speed="120" title="Play (2 sim-hours / real second)">&#9654;</button>
+        <button class="speed-btn" data-speed="480" title="Fast forward (8 sim-hours / real second)">&#9654;&#9654;</button>
+      </div>
+      <span id="time-display">Feb 01 · 00:00</span>
+      <input type="range" id="slider" min="0" max="40319" value="0" step="1">
+    </div>
+    <!-- Trail row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Trail</span>
+      <div class="btn-group" id="trail-options">
+        <button class="pill" data-trail="60">1 hr</button>
+        <button class="pill active" data-trail="360">6 hr</button>
+        <button class="pill" data-trail="1440">1 day</button>
+        <button class="pill" data-trail="Infinity">All</button>
+      </div>
+    </div>
+    <!-- Zone filter row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Zone</span>
+      <div class="btn-group" id="zone-filters"></div>
+    </div>
+    <!-- Vessel type filter row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Type</span>
+      <div class="btn-group" id="type-filters"></div>
+    </div>
+    <!-- Color mode row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Color</span>
+      <button id="color-toggle" title="Toggle vessel dot colour mode">By type</button>
+    </div>
+  </div>
+
+  <script>
+  // ── Palettes ───────────────────────────────────────────────────────────────
+  const TYPE_COLORS = {
+    'Cargo':         '#1f77b4',
+    'Tanker':        '#ff7f0e',
+    'Passenger':     '#2ca02c',
+    'Fishing':       '#d62728',
+    'Tug':           '#9467bd',
+    'Pleasure Craft':'#8c564b',
+    'HSC':           '#e377c2',
+    'SAR':           '#7f7f7f',
+    'Other':         '#bcbd22',
+  };
+
+  const ZONE_COLORS = [
+    '#4a6cf7',  // 0 outer_approach
+    '#ff7f0e',  // 1 anchorage
+    '#2ca02c',  // 2 south_terminal
+    '#9467bd',  // 3 north_terminal
+  ];
+  const ZONE_LABELS_ARR = ['Outer Approach', 'Anchorage', 'South Terminal', 'North Terminal'];
+  const ZONE_KEYS = ['outer_approach', 'anchorage', 'south_terminal', 'north_terminal'];
+
+  // Aarhus sub-zone polygons — [lat, lon] vertex arrays for Leaflet.
+  // anchorage and south_terminal share a diagonal boundary:
+  //   southern end (lat 56.14): lon 10.21 | northern end (lat 56.17): lon 10.25
+  const ZONE_POLYS = [
+    // outer_approach — rectangle
+    [[56.10, 10.15], [56.10, 10.30], [56.14, 10.30], [56.14, 10.15]],
+    // anchorage — western quadrilateral, diagonal on east side
+    [[56.14, 10.15], [56.14, 10.21], [56.17, 10.25], [56.17, 10.15]],
+    // south_terminal — eastern quadrilateral, diagonal on west side
+    [[56.14, 10.21], [56.14, 10.30], [56.17, 10.30], [56.17, 10.25]],
+    // north_terminal — rectangle
+    [[56.17, 10.18], [56.17, 10.30], [56.22, 10.30], [56.22, 10.18]],
+  ];
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const TOTAL_MINUTES = 28 * 1440;
+  let currentTime  = 0;
+  let trailLength  = 360;          // minutes
+  let activeTypes  = new Set(Object.keys(TYPE_COLORS));
+  let activeZones  = new Set([0, 1, 2, 3, null]); // null = unzoned
+  let colorByZone  = false;        // false = color by type
+  let playSpeed    = 0;            // 0 = paused; active speed in sim-min per real second
+  let lastSpeed    = 120;          // speed to resume to when unpausing (matches SPEED_NORMAL)
+  let rafId        = null;
+  let lastRafTs    = null;
+  const SPEED_SLOW   = 30;         // 30 sim-min / real second  (~22 min for full month)
+  const SPEED_NORMAL = 120;        // 2 sim-hours / real second (~5.6 min for full month)
+  const SPEED_FAST   = 480;        // 8 sim-hours / real second (~1.4 min for full month)
+
+  // ── Map setup ─────────────────────────────────────────────────────────────
+  const map = L.map('map', {
+    center: [56.155, 10.225],
+    zoom: 13,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a> | DMA AIS',
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }
+  ).addTo(map);
+
+  // ── Zone overlays ──────────────────────────────────────────────────────────
+  ZONE_POLYS.forEach((vertices, i) => {
+    const color = ZONE_COLORS[i];
+    L.polygon(vertices, {
+      color:       color,
+      weight:      1.5,
+      dashArray:   '5 4',
+      fillColor:   color,
+      fillOpacity: 0.06,
+      interactive: false,
+    }).addTo(map);
+
+    // Permanent label at centroid of polygon
+    const lat = vertices.reduce((s, v) => s + v[0], 0) / vertices.length;
+    const lon = vertices.reduce((s, v) => s + v[1], 0) / vertices.length;
+    L.marker([lat, lon], { interactive: false, opacity: 0 })
+      .bindTooltip(ZONE_LABELS_ARR[i], {
+        permanent: true,
+        direction: 'center',
+        className: 'zone-label',
+        offset: [0, 0],
+      })
+      .addTo(map);
+  });
+
+  // ── Canvas overlay ─────────────────────────────────────────────────────────
+  const canvas = document.getElementById('vessel-canvas');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = window.devicePixelRatio || 1;
+
+  function resizeCanvas() {
+    const w = map.getContainer().offsetWidth;
+    const h = map.getContainer().offsetHeight;
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
+    draw();
+  }
+
+  map.on('zoom move resize', draw);
+  window.addEventListener('resize', resizeCanvas);
+
+  // ── Draw ───────────────────────────────────────────────────────────────────
+  let allVessels   = [];
+  let visibleCount = 0;
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const bounds = map.getBounds().pad(0.15);
+    const zoom   = map.getZoom();
+    const dotR   = zoom >= 14 ? 5 : zoom >= 12 ? 4 : 3;
+    const lineW  = zoom >= 14 ? 2 : 1.5;
+
+    let visible = 0;
+
+    for (const vessel of allVessels) {
+      if (!activeTypes.has(vessel.type)) continue;
+
+      const track = vessel.track;
+
+      // Latest point at or before currentTime
+      let latestIdx = -1;
+      for (let i = 0; i < track.length; i++) {
+        if (track[i].t <= currentTime) latestIdx = i;
+        else break;
+      }
+      if (latestIdx === -1) continue;
+
+      const latest = track[latestIdx];
+
+      // Zone filter: check the current point's zone (undefined = unzoned)
+      const currentZone = latest.z != null ? latest.z : null;
+      if (!activeZones.has(currentZone)) continue;
+
+      if (!bounds.contains([latest.lat, latest.lon])) continue;
+
+      visible++;
+
+      // Vessel colour
+      const color = colorByZone
+        ? (currentZone != null ? ZONE_COLORS[currentZone] : '#888')
+        : (TYPE_COLORS[vessel.type] || '#bcbd22');
+
+      // Trail
+      const trailStart = trailLength === Infinity ? -Infinity : currentTime - trailLength;
+      let startIdx = latestIdx;
+      while (startIdx > 0 && track[startIdx - 1].t >= trailStart) startIdx--;
+
+      if (latestIdx > startIdx) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth   = lineW;
+        ctx.globalAlpha = 0.35;
+        ctx.lineJoin    = 'round';
+        const p0 = map.latLngToContainerPoint([track[startIdx].lat, track[startIdx].lon]);
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = startIdx + 1; i <= latestIdx; i++) {
+          const p = map.latLngToContainerPoint([track[i].lat, track[i].lon]);
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+
+      // Position dot
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle   = color;
+      ctx.beginPath();
+      const pos = map.latLngToContainerPoint([latest.lat, latest.lon]);
+      ctx.arc(pos.x, pos.y, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+    visibleCount = visible;
+    document.getElementById('count-visible').textContent = visible.toLocaleString();
+  }
+
+  // ── Animation loop ─────────────────────────────────────────────────────────
+  function step(ts) {
+    if (playSpeed === 0) return;
+    if (lastRafTs !== null) {
+      const dt = (ts - lastRafTs) / 1000;
+      currentTime = Math.min(TOTAL_MINUTES - 1, currentTime + dt * playSpeed);
+      document.getElementById('slider').value = Math.round(currentTime);
+      updateTimeDisplay();
+      draw();
+      if (currentTime >= TOTAL_MINUTES - 1) { setSpeed(0); return; }
+    }
+    lastRafTs = ts;
+    rafId = requestAnimationFrame(step);
+  }
+
+  function setSpeed(speed) {
+    if (speed > 0) lastSpeed = speed;
+    playSpeed = speed;
+    if (speed > 0) {
+      if (currentTime >= TOTAL_MINUTES - 1) currentTime = 0;
+      lastRafTs = null;
+      if (!rafId) rafId = requestAnimationFrame(step);
+    } else {
+      lastRafTs = null;
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    }
+    updateSpeedButtons();
+  }
+
+  function updateSpeedButtons() {
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.speed) === playSpeed);
+    });
+  }
+
+  // ── Time display ───────────────────────────────────────────────────────────
+  const MONTH_DAYS = [31,28,31,30,31,30,31,31,30,31,30,31];
+  const EPOCH_MONTH = 2; // February
+
+  function updateTimeDisplay() {
+    const totalMin = Math.round(currentTime);
+    const dayOffset = Math.floor(totalMin / 1440);        // 0-based day in February
+    const minOfDay  = totalMin % 1440;
+    const h = Math.floor(minOfDay / 60);
+    const m = minOfDay % 60;
+    const dayNum = dayOffset + 1;
+    document.getElementById('time-display').textContent =
+      'Feb ' + String(dayNum).padStart(2,'0') + ' · ' +
+      String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+  }
+
+  // ── Tooltip / hover ────────────────────────────────────────────────────────
+  const tooltip  = document.getElementById('tooltip');
+  const HIT_RADIUS = 14;
+
+  map.getContainer().addEventListener('mousemove', e => {
+    const rect = map.getContainer().getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const vessel of allVessels) {
+      if (!activeTypes.has(vessel.type)) continue;
+      const track = vessel.track;
+
+      let latestIdx = -1;
+      for (let i = 0; i < track.length; i++) {
+        if (track[i].t <= currentTime) latestIdx = i;
+        else break;
+      }
+      if (latestIdx === -1) continue;
+
+      const latest = track[latestIdx];
+      const currentZone = latest.z != null ? latest.z : null;
+      if (!activeZones.has(currentZone)) continue;
+
+      const pos = map.latLngToContainerPoint([latest.lat, latest.lon]);
+      const dx = pos.x - mx, dy = pos.y - my;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < HIT_RADIUS && dist < closestDist) {
+        closestDist = dist;
+        closest = { vessel, point: latest };
+      }
+    }
+
+    if (closest) {
+      const { vessel, point } = closest;
+      const name = vessel.name && vessel.name !== 'nan' && vessel.name.trim()
+        ? vessel.name : `MMSI ${vessel.mmsi}`;
+      const sog = point.sog != null ? point.sog.toFixed(1) + ' kn' : '—';
+      const zoneStr = point.z != null ? ZONE_LABELS_ARR[point.z] : 'Unzoned';
+      tooltip.innerHTML = `
+        <div class="tt-name">${name}</div>
+        <div class="tt-row">Type &nbsp;<span>${vessel.type}</span></div>
+        <div class="tt-row">Zone &nbsp;<span>${zoneStr}</span></div>
+        <div class="tt-row">Speed <span>${sog}</span></div>
+        <div class="tt-row">MMSI &nbsp;<span>${vessel.mmsi}</span></div>
+      `;
+      tooltip.style.display = 'block';
+      tooltip.style.left = Math.min(e.clientX + 16, window.innerWidth  - 240) + 'px';
+      tooltip.style.top  = Math.min(e.clientY - 10, window.innerHeight - 140) + 'px';
+      map.getContainer().style.cursor = 'crosshair';
+    } else {
+      tooltip.style.display = 'none';
+      map.getContainer().style.cursor = '';
+    }
+  });
+
+  map.getContainer().addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+
+  // ── UI: pause button ───────────────────────────────────────────────────────
+  document.getElementById('btn-pause').addEventListener('click', () => {
+    setSpeed(playSpeed > 0 ? 0 : lastSpeed);
+  });
+
+  // ── UI: speed buttons ─────────────────────────────────────────────────────
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => setSpeed(parseInt(btn.dataset.speed)));
+  });
+
+  // ── UI: slider ─────────────────────────────────────────────────────────────
+  document.getElementById('slider').addEventListener('input', e => {
+    setSpeed(0);
+    currentTime = parseInt(e.target.value, 10);
+    updateTimeDisplay();
+    draw();
+  });
+
+  // ── UI: trail pills ────────────────────────────────────────────────────────
+  document.querySelectorAll('#trail-options .pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trail-options .pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const val = btn.dataset.trail;
+      trailLength = val === 'Infinity' ? Infinity : parseInt(val, 10);
+      draw();
+    });
+  });
+
+  // ── UI: zone filter pills ──────────────────────────────────────────────────
+  function buildZoneFilters() {
+    const container = document.getElementById('zone-filters');
+    const zoneKeys = [...ZONE_COLORS.map((_, i) => i), null];
+
+    function syncZonePillsUI() {
+      container.querySelectorAll('.zone-pill[data-zone]').forEach(p => {
+        const key = p.dataset.zone === 'null' ? null : parseInt(p.dataset.zone, 10);
+        p.classList.toggle('active', activeZones.has(key));
+      });
+    }
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'pill';
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => {
+      activeZones = new Set(zoneKeys);
+      syncZonePillsUI();
+      draw();
+    });
+    container.appendChild(allBtn);
+
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'pill';
+    noneBtn.textContent = 'None';
+    noneBtn.addEventListener('click', () => {
+      activeZones.clear();
+      syncZonePillsUI();
+      draw();
+    });
+    container.appendChild(noneBtn);
+
+    ZONE_COLORS.forEach((color, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'zone-pill active';
+      btn.style.setProperty('--zc', color);
+      btn.dataset.zone = i;
+      btn.innerHTML = `<span class="zone-dot" style="background:${color}"></span>${ZONE_LABELS_ARR[i]}`;
+      btn.addEventListener('click', () => {
+        const z = i;
+        if (activeZones.has(z)) {
+          activeZones.delete(z);
+          btn.classList.remove('active');
+        } else {
+          activeZones.add(z);
+          btn.classList.add('active');
+        }
+        draw();
+      });
+      container.appendChild(btn);
+    });
+
+    // "Unzoned" pill
+    const btn = document.createElement('button');
+    btn.className = 'zone-pill active';
+    btn.style.setProperty('--zc', '#888');
+    btn.dataset.zone = 'null';
+    btn.innerHTML = `<span class="zone-dot" style="background:#888"></span>Unzoned`;
+    btn.addEventListener('click', () => {
+      if (activeZones.has(null)) {
+        activeZones.delete(null);
+        btn.classList.remove('active');
+      } else {
+        activeZones.add(null);
+        btn.classList.add('active');
+      }
+      draw();
+    });
+    container.appendChild(btn);
+  }
+
+  // ── UI: type filter pills ──────────────────────────────────────────────────
+  function buildTypeFilters(shipTypes) {
+    const container = document.getElementById('type-filters');
+
+    function syncTypePillsUI() {
+      container.querySelectorAll('.type-pill[data-type]').forEach(p => {
+        p.classList.toggle('active', activeTypes.has(p.dataset.type));
+      });
+    }
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'pill';
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => {
+      activeTypes = new Set(shipTypes);
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(allBtn);
+
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'pill';
+    noneBtn.textContent = 'None';
+    noneBtn.addEventListener('click', () => {
+      activeTypes.clear();
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(noneBtn);
+
+    shipTypes.forEach(type => {
+      const color = TYPE_COLORS[type] || '#999';
+      const btn = document.createElement('button');
+      btn.className = 'type-pill active';
+      btn.dataset.type = type;
+      btn.innerHTML = `<span class="type-dot" style="background:${color}"></span>${type}`;
+      btn.addEventListener('click', () => {
+        if (activeTypes.has(type)) {
+          activeTypes.delete(type);
+          btn.classList.remove('active');
+        } else {
+          activeTypes.add(type);
+          btn.classList.add('active');
+        }
+        draw();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  // ── UI: color mode toggle ──────────────────────────────────────────────────
+  document.getElementById('color-toggle').addEventListener('click', function() {
+    colorByZone = !colorByZone;
+    this.textContent = colorByZone ? 'By zone' : 'By type';
+    draw();
+  });
+
+  // ── Data load ──────────────────────────────────────────────────────────────
+  function onDataReady(data) {
+    allVessels = data.vessels;
+    buildZoneFilters();
+    buildTypeFilters(data.ship_types);
+    resizeCanvas();
+    updateTimeDisplay();
+    document.getElementById('loading').style.display = 'none';
+    setSpeed(SPEED_NORMAL);
+  }
+
+  resizeCanvas();
+  </script>
+
+  <!-- Vessel data — generated by viz/prepare_aarhus_map_data.py -->
+  <script src="data/aarhus_vessels_feb2026.js"
+          onload="onDataReady(window.AARHUS_VESSEL_DATA)"
+          onerror="document.getElementById('loading').querySelector('p').textContent='Could not load data/aarhus_vessels_feb2026.js — run viz/prepare_aarhus_map_data.py first.'">
+  </script>
+</body>
+</html>

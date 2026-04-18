@@ -23,6 +23,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import csv
 import logging
 import multiprocessing
 from pathlib import Path
@@ -32,6 +33,8 @@ import pandas as pd
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import PORTS, UNZIPPED_DIR, FILTERED_DIR, CHUNK_SIZE
+
+STATUS_CSV = Path(__file__).resolve().parent.parent / "data" / "pipeline_status.csv"
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -73,6 +76,39 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Pipeline status helpers
+# ---------------------------------------------------------------------------
+
+def _read_status_row(date_str: str) -> dict:
+    """Return the pipeline_status row for date_str, or {} if absent."""
+    if not STATUS_CSV.exists():
+        return {}
+    with open(STATUS_CSV, newline="") as f:
+        for row in csv.DictReader(f):
+            if row["date"] == date_str:
+                return row
+    return {}
+
+
+def _update_status(date_str: str, **fields) -> None:
+    """Set column values for one date row in pipeline_status.csv."""
+    if not STATUS_CSV.exists():
+        return
+    with open(STATUS_CSV, newline="") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    for row in rows:
+        if row["date"] == date_str:
+            row.update({k: str(v) for k, v in fields.items()})
+            break
+    with open(STATUS_CSV, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+# ---------------------------------------------------------------------------
 # Core helpers
 # ---------------------------------------------------------------------------
 
@@ -105,14 +141,37 @@ def _port_label(df: pd.DataFrame) -> pd.Series:
     return label.astype("category")
 
 
+def _find_csvs(folder: Path) -> list[Path]:
+    """
+    Return all CSV files in a folder, sorted by name.
+
+    Handles both naming conventions:
+      - Daily  : aisdk-YYYY-MM-DD.csv   (one file per folder)
+      - Monthly: aisdk_YYYYMMDD.csv     (one file per day inside a month folder)
+    """
+    return sorted(folder.glob("*.csv"))
+
+
+def _write_filtered_status(date_str: str, out_path: Path) -> None:
+    """Update pipeline_status with filtered=True, size, and compression."""
+    fsize = out_path.stat().st_size
+    status_row = _read_status_row(date_str)
+    try:
+        unzipped_size = float(status_row.get("unzipped_size") or 0)
+        compression = round((1 - fsize / unzipped_size) * 100, 1) if unzipped_size else None
+    except (ZeroDivisionError, TypeError, ValueError):
+        compression = None
+    _update_status(date_str, filtered=True, filtered_size=fsize, filtered_compression=compression)
+
+
 def filter_day(date_str: str) -> int:
     """
-    Filter one day's CSV and write the result to Parquet.
+    Filter one period's CSV(s) and write the result to Parquet.
 
     Parameters
     ----------
     date_str : str
-        ISO date, e.g. ``"2026-02-01"``.
+        ``"YYYY-MM-DD"`` for a daily folder or ``"YYYY-MM"`` for a monthly folder.
 
     Returns
     -------
@@ -120,38 +179,43 @@ def filter_day(date_str: str) -> int:
         Number of rows written.
     """
     folder = RAW_DIR / f"aisdk-{date_str}"
-    csv_path = folder / f"aisdk-{date_str}.csv"
-    if not csv_path.exists():
-        log.warning("Missing: %s — skipped", csv_path)
+    if not folder.exists():
+        log.warning("Missing folder: %s — skipped", folder)
+        return 0
+
+    csv_files = _find_csvs(folder)
+    if not csv_files:
+        log.warning("No CSV files in %s — skipped", folder)
         return 0
 
     out_path = OUT_DIR / f"aisdk-{date_str}.parquet"
-    if out_path.exists():
-        log.info("Already filtered: %s — skipped", date_str)
+    if _read_status_row(date_str).get("filtered") == "True":
+        log.info("Already filtered (status): %s — skipped", date_str)
         return 0
 
-    log.info("Filtering %s …", date_str)
+    log.info("Filtering %s (%d file(s)) …", date_str, len(csv_files))
 
     chunks: list[pd.DataFrame] = []
 
-    reader = pd.read_csv(
-        csv_path,
-        usecols=USECOLS,
-        dtype=DTYPE_MAP,
-        chunksize=CHUNK_SIZE,
-        low_memory=False,
-        on_bad_lines="skip",
-    )
-
-    for chunk in reader:
-        filtered = chunk[_bbox_mask(chunk)]
-        if not filtered.empty:
-            chunks.append(filtered)
+    for csv_path in csv_files:
+        reader = pd.read_csv(
+            csv_path,
+            usecols=USECOLS,
+            dtype=DTYPE_MAP,
+            chunksize=CHUNK_SIZE,
+            low_memory=False,
+            on_bad_lines="skip",
+        )
+        for chunk in reader:
+            filtered = chunk[_bbox_mask(chunk)]
+            if not filtered.empty:
+                chunks.append(filtered)
 
     if not chunks:
         log.info("  No matching rows for %s", date_str)
         # Write an empty parquet so we don't reprocess this day.
         pd.DataFrame(columns=USECOLS).to_parquet(out_path, index=False)
+        _write_filtered_status(date_str, out_path)
         return 0
 
     combined = pd.concat(chunks, ignore_index=True)
@@ -165,6 +229,7 @@ def filter_day(date_str: str) -> int:
     combined.to_parquet(out_path, index=False, compression="snappy")
 
     log.info("  %s → %d rows → %s", date_str, len(combined), out_path.name)
+    _write_filtered_status(date_str, out_path)
     return len(combined)
 
 

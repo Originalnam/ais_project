@@ -1,0 +1,229 @@
+/*
+  viz.css — Port Activity Analytics · portfolio dark theme
+  Shared by: port-dashboard.js, aarhus-dashboard.js
+  Tokens: bg=#0f172a  card=#1e293b  accent=#38bdf8  text=#e2e8f0
+*/
+
+/* ── Dashboard mount wrapper ───────────────────────────────────────────────── */
+.pa-dashboard {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100%;
+}
+
+/* ── Filter bars (port / zone / type selectors) ───────────────────────────── */
+.pa-filter-bar {
+  background: #1e293b;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 10px 32px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pa-filter-bar .bar-label {
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* Port / zone buttons */
+.pa-port-btn, .pa-zone-btn {
+  padding: 5px 16px;
+  border-radius: 20px;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  transition: all 0.15s;
+  text-transform: capitalize;
+}
+.pa-port-btn:hover,  .pa-zone-btn:hover  { border-color: var(--c); color: var(--c); }
+.pa-port-btn.active, .pa-zone-btn.active { background: var(--c); border-color: var(--c); color: #fff; }
+
+/* Vessel-type buttons */
+.pa-type-btn {
+  padding: 5px 16px;
+  border-radius: 20px;
+  border: 1.5px solid rgba(255,255,255,0.18);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  transition: all 0.15s;
+}
+.pa-type-btn:hover  { border-color: rgba(56,189,248,0.6); color: rgba(56,189,248,0.9); }
+.pa-type-btn.active { background: rgba(56,189,248,0.15); border-color: rgba(56,189,248,0.5); color: #e2e8f0; }
+
+/* Heatmap single-zone selector */
+.pa-hz-btn {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255,255,255,0.14);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.5);
+  transition: all 0.15s;
+}
+.pa-hz-btn:hover  { border-color: var(--c); color: var(--c); }
+.pa-hz-btn.active { background: var(--c); border-color: var(--c); color: #fff; }
+
+/* Heatmap mode toggle */
+.pa-toggle-group {
+  display: flex;
+  border: 1.5px solid rgba(255,255,255,0.14);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.pa-tgl {
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(255,255,255,0.45);
+  transition: all 0.12s;
+}
+.pa-tgl + .pa-tgl { border-left: 1.5px solid rgba(255,255,255,0.14); }
+.pa-tgl.active { background: #38bdf8; color: #0f172a; font-weight: 700; }
+
+/* ── KPI strip ────────────────────────────────────────────────────────────── */
+.pa-kpi-strip {
+  display: flex;
+  gap: 16px;
+  padding: 20px 32px 0;
+  flex-wrap: wrap;
+}
+.pa-kpi-card {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 16px 22px;
+  flex: 1 1 148px;
+}
+.pa-kpi-card .label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: rgba(255,255,255,0.45);
+}
+.pa-kpi-card .value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 4px;
+  color: #e2e8f0;
+}
+.pa-kpi-card .sub {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.35);
+  margin-top: 2px;
+}
+
+/* ── Card grid ────────────────────────────────────────────────────────────── */
+.pa-grid {
+  display: grid;
+  gap: 16px;
+  padding: 16px 32px 32px;
+}
+.pa-card {
+  background: #1e293b;
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+.pa-card h2 {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: rgba(255,255,255,0.45);
+  margin-bottom: 14px;
+}
+.pa-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.pa-card-header h2    { margin-bottom: 0; flex: 1; }
+.pa-card-header .hz-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Zones inset (Leaflet mini-map) ──────────────────────────────────────── */
+.pa-zones-inset {
+  position: relative;
+  flex-shrink: 0;
+  width: 220px;
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: #1e293b;
+}
+.pa-zones-inset .leaflet-control-attribution { display: none; }
+.pa-inset-zone-label {
+  background: rgba(15,23,42,0.88) !important;
+  border: none !important;
+  border-radius: 3px !important;
+  color: #e2e8f0 !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  padding: 1px 4px !important;
+  box-shadow: none !important;
+}
+.pa-inset-zone-label::before { display: none !important; }
+
+/* ── Donut grid ───────────────────────────────────────────────────────────── */
+.pa-donuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.pa-donut-cell { text-align: center; }
+.pa-donut-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────────────── */
+.pa-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: rgba(15,23,42,0.95);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: none;
+  z-index: 9999;
+  line-height: 1.6;
+  max-width: 220px;
+}
+
+/* ── SVG axes & grid ──────────────────────────────────────────────────────── */
+.pa-axis text  { font-size: 10px; fill: rgba(255,255,255,0.45); }
+.pa-axis path, .pa-axis line { stroke: rgba(255,255,255,0.12); }
+.pa-grid line  { stroke: rgba(255,255,255,0.06); }
+
+/* ── Map shells (for map.js / aarhus-map.js) ─────────────────────────────── */
+.pa-map-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #0f172a;
+  overflow: hidden;
+}

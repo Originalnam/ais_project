@@ -30,9 +30,18 @@ log = logging.getLogger(__name__)
 
 # Map Parquet filename → target table name
 _TABLES = {
-    "hourly_stats.parquet":      "port_hourly_stats",
-    "vessel_visits.parquet":     "vessel_visits",
-    "type_distribution.parquet": "type_distribution",
+    "hourly_stats.parquet":                "port_hourly_stats",
+    "vessel_visits.parquet":               "vessel_visits",
+    "type_distribution.parquet":           "type_distribution",
+    # New port-level tables (produced by pipeline/transform.py)
+    "port_navstatus_stats.parquet":        "port_navstatus_stats",
+    "port_speed_stats.parquet":            "port_speed_stats",
+    "port_daily_flow.parquet":             "port_daily_flow",
+    # Aarhus sub-zone tables (produced by pipeline/transform_aarhus.py)
+    "aarhus_zone_hourly_stats.parquet":    "aarhus_zone_hourly_stats",
+    "aarhus_zone_visits.parquet":          "aarhus_zone_visits",
+    "aarhus_navstatus_stats.parquet":      "aarhus_navstatus_stats",
+    "aarhus_zone_speed_stats.parquet":     "aarhus_zone_speed_stats",
 }
 
 

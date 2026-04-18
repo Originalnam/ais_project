@@ -16,8 +16,25 @@ import sys
 
 import pandas as pd
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config import PORTS
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 BBOX = dict(lat_min=54.0, lat_max=62.0, lon_min=7.0, lon_max=17.0)
+
+# Port bounding boxes from config.py — this is exactly what pipeline/filter.py
+# uses to decide which rows to keep, exported so the map can draw them as
+# dashed overlays with the correct "filter inclusion area" caption.
+PORT_BBOXES = [
+    {
+        'name': name.capitalize(),
+        'key':  name,
+        'lat':  round((lat_min + lat_max) / 2, 4),
+        'lon':  round((lon_min + lon_max) / 2, 4),
+        'bbox': [[lat_min, lon_min], [lat_max, lon_max]],
+    }
+    for name, (lat_min, lat_max, lon_min, lon_max) in PORTS.items()
+]
 
 COLS = [
     '# Timestamp', 'Type of mobile', 'MMSI',
@@ -136,6 +153,7 @@ def prepare(date: str, data_dir: str, out_path: str) -> None:
         'bbox': BBOX,
         'bucket_minutes': BUCKET_MINUTES,
         'ship_types': TOP_TYPES + ['Other'],
+        'ports': PORT_BBOXES,
         'vessels': vessels,
     }
 

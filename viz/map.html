@@ -267,8 +267,58 @@
       border: none;
     }
     .port-icon svg {
-      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
     }
+
+    /* ── Port label tooltip ──────────────────────────────────────────────── */
+    .port-label {
+      background: rgba(10, 10, 25, 0.88) !important;
+      border: 1px solid rgba(123, 167, 232, 0.4) !important;
+      border-radius: 8px !important;
+      color: #c8d8f0 !important;
+      font-size: 12px !important;
+      font-weight: 500 !important;
+      padding: 5px 10px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+      white-space: nowrap;
+    }
+    .port-label::before { display: none !important; }
+    .port-label strong { color: #e8e8f8; font-weight: 700; }
+
+    /* ── Header caption (filter-inclusion bbox legend) ───────────────────── */
+    .header-caption {
+      display: flex !important;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px !important;
+      color: rgba(255,255,255,0.55) !important;
+    }
+    .bbox-swatch {
+      display: inline-block;
+      width: 18px;
+      height: 10px;
+      border: 1.5px dashed #ffd166;
+      background: rgba(255, 209, 102, 0.10);
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Port bbox corner label ──────────────────────────────────────────── */
+    .bbox-label {
+      background: rgba(255, 209, 102, 0.92) !important;
+      border: none !important;
+      border-radius: 4px !important;
+      color: #1a1a2e !important;
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      padding: 2px 6px !important;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .bbox-label::before { display: none !important; }
   </style>
 </head>
 <body>
@@ -287,6 +337,10 @@
   <div id="header">
     <h1>AIS Vessel Traffic</h1>
     <p>Danish Waters &mdash; 2026-02-01</p>
+    <p class="header-caption">
+      <span class="bbox-swatch"></span>
+      Dashed boxes = filter inclusion area (pipeline/filter.py)
+    </p>
   </div>
 
   <!-- Vessel count -->
@@ -336,13 +390,9 @@
     'Other':         '#bcbd22',
   };
 
-  const PORTS = [
-    { name: 'Copenhagen', lat: 55.68, lon: 12.57 },
-    { name: 'Aarhus',     lat: 56.15, lon: 10.22 },
-    { name: 'Esbjerg',    lat: 55.47, lon:  8.44 },
-    { name: 'Aalborg',    lat: 57.05, lon:  9.92 },
-    { name: 'Fredericia', lat: 55.57, lon:  9.75 },
-  ];
+  // Port bboxes are loaded from the payload (viz/prepare_map_data.py reads
+  // config.PORTS, the same source pipeline/filter.py uses as its inclusion
+  // area). This keeps map, pipeline, and config in sync automatically.
 
   // ── State ─────────────────────────────────────────────────────────────────
   let currentTime = 0;          // minutes from midnight
@@ -388,27 +438,66 @@
   map.on('zoom move resize', draw);
   window.addEventListener('resize', resizeCanvas);
 
-  // ── Port markers ──────────────────────────────────────────────────────────
+  // ── Port markers & bounding boxes ────────────────────────────────────────
+  // Bboxes are rendered as the filter-inclusion area (pipeline/filter.py)
+  // with a high-contrast amber dashed outline + persistent NW corner label.
+  const PORT_BBOX_FILL   = 'rgba(255, 209, 102, 0.08)';
+  const PORT_BBOX_STROKE = '#ffd166';
+
   const portIcon = L.divIcon({
     className: 'port-icon',
-    html: `<svg width="20" height="20" viewBox="0 0 20 20">
-             <polygon points="10,2 12.2,7.4 18,7.6 13.6,11.8 15.3,18 10,14.5 4.7,18 6.4,11.8 2,7.6 7.8,7.4"
-                      fill="#2c2c3e" stroke="rgba(255,255,255,0.7)" stroke-width="1.2"/>
+    html: `<svg width="26" height="32" viewBox="0 0 26 32">
+             <!-- pin body -->
+             <path d="M13 1 C7.477 1 3 5.477 3 11 C3 18.5 13 31 13 31 C13 31 23 18.5 23 11 C23 5.477 18.523 1 13 1 Z"
+                   fill="#1a1a2e" stroke="rgba(123,167,232,0.9)" stroke-width="1.8"/>
+             <!-- anchor icon -->
+             <text x="13" y="14.5" text-anchor="middle" font-size="10" fill="rgba(123,167,232,0.95)"
+                   font-family="sans-serif" font-weight="700">⚓</text>
            </svg>`,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [26, 32],
+    iconAnchor: [13, 31],
+    tooltipAnchor: [0, -32],
   });
 
-  PORTS.forEach(p => {
-    L.marker([p.lat, p.lon], { icon: portIcon })
-      .bindTooltip(p.name, {
-        permanent: false,
-        direction: 'top',
-        className: 'port-label',
-        offset: [0, -12],
+  function drawPortBboxes(ports) {
+    ports.forEach(p => {
+      const [[latMin, lonMin], [latMax, lonMax]] = p.bbox;
+
+      // Prominent dashed rectangle — the pipeline inclusion area
+      L.rectangle(p.bbox, {
+        color:       PORT_BBOX_STROKE,
+        weight:      2.5,
+        dashArray:   '8 6',
+        fillColor:   PORT_BBOX_FILL,
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(map);
+
+      // Persistent NW-corner label with the port name
+      L.marker([latMax, lonMin], {
+        icon: L.divIcon({ className: '', html: '', iconSize: [0, 0] }),
+        interactive: false,
+        keyboard: false,
       })
-      .addTo(map);
-  });
+        .bindTooltip(p.name, {
+          permanent: true,
+          direction: 'right',
+          className: 'bbox-label',
+          offset: [2, 0],
+        })
+        .addTo(map);
+
+      // Port marker at centroid (unchanged anchor/hover behaviour)
+      L.marker([p.lat, p.lon], { icon: portIcon })
+        .bindTooltip(`<strong>${p.name}</strong>`, {
+          permanent: false,
+          direction: 'top',
+          className: 'port-label',
+          offset: [0, -4],
+        })
+        .addTo(map);
+    });
+  }
 
   // ── Draw ──────────────────────────────────────────────────────────────────
   let allVessels = [];
@@ -613,6 +702,34 @@
   function buildTypeFilters(shipTypes) {
     const container = document.getElementById('type-filters');
     container.innerHTML = '';
+
+    // All / None meta pills — set once, refresh per-type pill state afterwards.
+    function syncTypePillsUI() {
+      container.querySelectorAll('.type-pill[data-type]').forEach(p => {
+        p.classList.toggle('active', activeTypes.has(p.dataset.type));
+      });
+    }
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'pill';
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => {
+      activeTypes = new Set(shipTypes);
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(allBtn);
+
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'pill';
+    noneBtn.textContent = 'None';
+    noneBtn.addEventListener('click', () => {
+      activeTypes.clear();
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(noneBtn);
+
     shipTypes.forEach(type => {
       const color = TYPE_COLORS[type] || '#999';
       const btn = document.createElement('button');
@@ -621,7 +738,6 @@
       btn.innerHTML = `<span class="type-dot" style="background:${color}"></span>${type}`;
       btn.addEventListener('click', () => {
         if (activeTypes.has(type)) {
-          if (activeTypes.size === 1) return; // keep at least one
           activeTypes.delete(type);
           btn.classList.remove('active');
         } else {
@@ -639,6 +755,7 @@
   // so we can open this file directly via file:// without a server.
   function onDataReady(data) {
     allVessels = data.vessels;
+    if (Array.isArray(data.ports)) drawPortBboxes(data.ports);
     buildTypeFilters(data.ship_types);
     resizeCanvas();
     updateTimeDisplay();
