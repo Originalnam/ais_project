@@ -132,6 +132,7 @@ data/raw/*.zip  →  data/raw/unzipped/  →  filter  →  transform  →  load 
 - `tests/` — `test_filter.py` (10 tests), `test_transform_aarhus.py` (18 tests)
 - `notebooks/exploration.ipynb`, `notebooks/database.ipynb`
 - `viz/` — D3 dashboards and data preparation scripts (see below)
+- `viz/portfolio/` — self-contained IIFE modules for `yoerivda.be` integration (see below)
 
 ## Running the pipeline end-to-end
 
@@ -175,6 +176,37 @@ python viz/prepare_dashboard_data.py --date-from 2026-01-01 --date-to 2026-01-31
 python viz/prepare_aarhus_data.py
 python viz/prepare_aarhus_map_data.py   # reads filtered Parquets directly (not SQLite)
 ```
+
+### Portfolio modules (`viz/portfolio/`)
+
+Self-contained IIFE modules adapted for embedding in `yoerivda.be`. Each module mounts into a host `<div>` and reads from a `window.*` data global — no `fetch()`, no runtime requests. Dependencies (D3 v7, Leaflet 1.9.4) are loaded by the host page.
+
+| File | Mount div | Data global | Notes |
+|---|---|---|---|
+| `port-dashboard.js` | `#chart-port` | `window.DASHBOARD_DATA` | Dark theme; vessel-type donut + stacked bars + line charts + heatmap |
+| `aarhus-dashboard.js` | `#chart-aarhus` | `window.AARHUS_DATA` | Requires Leaflet (zones inset map); vessel-type pill filter on all 6 charts |
+| `map.js` | `#chart-map` | `window.VESSEL_DATA` | Host must set height; 48 px side margins prevent scroll-trap |
+| `aarhus-map.js` | `#chart-aarhus-map` | `window.AARHUS_VESSEL_DATA` | Host must set height; 48 px side margins prevent scroll-trap |
+| `viz.css` | — | — | Shared dark-navy CSS; `pa-` prefix; must be loaded by host |
+| `layout-brief.md` | — | — | Wiring guide and dataset descriptions for the host `index.html` |
+
+Data files in `viz/portfolio/data/` (JS files that assign window globals):
+
+| File | Global | Content |
+|---|---|---|
+| `dashboard.js` | `window.DASHBOARD_DATA` | Port KPIs, daily traffic, type mix, heatmaps, daily flow, movement |
+| `aarhus_analytics.js` | `window.AARHUS_DATA` | Zone KPIs, speed, dwell, nav-status, type mix, congestion, zone polygons |
+| `vessels_2026-02-01.js` | `window.VESSEL_DATA` | One day of AIS tracks for all five port bboxes |
+| `aarhus_vessels_feb2026.js` | `window.AARHUS_VESSEL_DATA` | Full-month 30-min downsampled Aarhus tracks with zone index |
+
+**To test portfolio modules locally:**
+
+```bash
+cd viz/portfolio && python -m http.server 8001
+# open http://localhost:8001/test.html
+```
+
+`test.html` loads all four modules on one dark page using the static data files — no pipeline re-run needed. Hard-refresh (Ctrl+Shift+R) if CSS changes don't appear.
 
 ### Port dashboard datasets (`viz/data/dashboard.json`)
 
