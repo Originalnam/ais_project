@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aarhus Port Analytics — Zone Breakdown</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  /* ── Reset / base ────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f6fa;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  header {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  header h1 { font-size: 1.2rem; font-weight: 600; }
+  header p  { font-size: 0.82rem; opacity: 0.65; }
+  header a  { color: #8fb3ff; font-size: 0.82rem; opacity: 0.85; text-decoration: none; margin-left: auto; }
+  header a:hover { opacity: 1; text-decoration: underline; }
+
+  /* ── Zone / type selectors ───────────────────────────────────────────── */
+  #zone-bar, #type-bar {
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 10px 32px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  #zone-bar .bar-label,
+  #type-bar .bar-label {
+    font-size: 0.75rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-right: 4px;
+  }
+  .zone-btn, .type-btn {
+    padding: 5px 16px;
+    border-radius: 20px;
+    border: 1.5px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .zone-btn:hover  { border-color: var(--c); color: var(--c); }
+  .zone-btn.active { background: var(--c); border-color: var(--c); color: #fff; }
+  .type-btn:hover  { border-color: #555; color: #555; }
+  .type-btn.active { background: #555; border-color: #555; color: #fff; }
+
+  /* ── Heatmap zone selector (single-select, inside card) ─────────────── */
+  .hz-btn {
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1.5px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .hz-btn:hover  { border-color: var(--c); color: var(--c); }
+  .hz-btn.active { background: var(--c); border-color: var(--c); color: #fff; }
+
+  /* ── KPI strip ───────────────────────────────────────────────────────── */
+  #kpi-strip {
+    display: flex;
+    gap: 16px;
+    padding: 20px 32px 0;
+    flex-wrap: wrap;
+  }
+  .kpi-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 16px 22px;
+    flex: 1 1 160px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .kpi-card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .06em; color: #888; }
+  .kpi-card .value { font-size: 1.6rem; font-weight: 700; margin-top: 4px; }
+  .kpi-card .sub   { font-size: 0.75rem; color: #aaa; margin-top: 2px; }
+
+  /* ── Grid ────────────────────────────────────────────────────────────── */
+  #grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 16px 32px 32px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .card h2 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #888;
+    margin-bottom: 14px;
+  }
+  .card-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .card-header-row h2 { margin: 0; flex: 1 1 auto; }
+  .card-header-row .hz-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  #card-trend    { grid-column: 1 / -1; }
+  #card-dwell    { grid-column: 1; }
+  #card-speed    { grid-column: 2; }
+  #card-navstatus{ grid-column: 1; }
+  #card-donuts   { grid-column: 2; }
+  #card-heatmap  { grid-column: 1 / -1; }
+
+  /* Small-multiple donut grid */
+  #donuts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .donut-cell { text-align: center; }
+  .donut-cell .donut-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+  }
+
+  /* ── Tooltip ─────────────────────────────────────────────────────────── */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: rgba(26,26,46,.88);
+    color: #fff;
+    font-size: 0.78rem;
+    padding: 7px 11px;
+    border-radius: 6px;
+    display: none;
+    z-index: 9999;
+    line-height: 1.5;
+    max-width: 240px;
+  }
+
+  /* ── SVG axes ────────────────────────────────────────────────────────── */
+  .axis text { font-size: 10px; fill: #888; }
+  .axis path, .axis line { stroke: #e0e0e0; }
+  .grid line { stroke: #f0f0f0; }
+  .grid path { stroke: none; }
+
+  /* ── Legend ─────────────────────────────────────────────────────────── */
+  .legend text { font-size: 10px; fill: #555; }
+
+  /* ── Zones inset (Leaflet mini-map) ─────────────────────────────────── */
+  #card-trend { position: relative; }
+  #zones-inset {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: 220px;
+    height: 220px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    z-index: 2;
+    background: #fff;
+  }
+  #zones-inset .leaflet-control-attribution { display: none; }
+  .inset-zone-label {
+    background: rgba(255,255,255,0.85) !important;
+    border: none !important;
+    border-radius: 3px !important;
+    color: #333 !important;
+    font-size: 9px !important;
+    font-weight: 600 !important;
+    padding: 1px 4px !important;
+    letter-spacing: 0.02em;
+    box-shadow: none !important;
+  }
+  .inset-zone-label::before { display: none !important; }
+  /* Tighten trend chart so it doesn't run under the inset on narrow screens */
+  @media (max-width: 720px) {
+    #zones-inset { position: static; margin-top: 12px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Aarhus Port — Zone Analytics</h1>
+  <p>Danish Maritime Authority · AIS data · February 2026</p>
+  <a href="port_dashboard.html">← All ports</a>
+</header>
+
+<div id="zone-bar">
+  <span class="bar-label">Filter zones</span>
+</div>
+<div id="type-bar">
+  <span class="bar-label">Vessel type</span>
+</div>
+<div id="kpi-strip"></div>
+
+<div id="grid">
+  <div class="card" id="card-trend">
+    <h2>Daily vessel count by zone — Feb 2026</h2>
+    <div id="chart-trend"></div>
+    <div id="zones-inset"></div>
+  </div>
+
+  <div class="card" id="card-dwell">
+    <h2>Avg dwell time by zone &amp; vessel type (hours)</h2>
+    <div id="chart-dwell"></div>
+  </div>
+
+  <div class="card" id="card-speed">
+    <h2>Avg speed by zone &amp; hour of day (knots)</h2>
+    <div id="chart-speed"></div>
+  </div>
+
+  <div class="card" id="card-navstatus">
+    <h2>Navigational status mix by zone</h2>
+    <div id="chart-navstatus"></div>
+  </div>
+
+  <div class="card" id="card-donuts">
+    <h2>Vessel type mix by zone</h2>
+    <div id="donuts-grid"></div>
+  </div>
+
+  <div class="card" id="card-heatmap">
+    <div class="card-header-row">
+      <h2>Zone Congestion — avg vessels by hour &amp; day of week</h2>
+      <div class="hz-btns" id="heatmap-zone-btns"></div>
+    </div>
+    <div id="chart-heatmap"></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const ZONE_COLORS = {
+  "outer_approach": "#4a6cf7",
+  "anchorage":      "#ff7f0e",
+  "south_terminal": "#2ca02c",
+  "north_terminal": "#9467bd",
+};
+
+const TYPE_COLORS = {
+  "Cargo":          "#1f77b4",
+  "Tanker":         "#ff7f0e",
+  "Passenger":      "#2ca02c",
+  "Fishing":        "#d62728",
+  "Tug":            "#9467bd",
+  "Pleasure Craft": "#8c564b",
+  "HSC":            "#e377c2",
+  "SAR":            "#7f7f7f",
+  "Other":          "#bcbd22",
+};
+
+const NAV_COLORS = d3.scaleOrdinal(d3.schemeTableau10);
+const DOW_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+const tooltip = document.getElementById("tooltip");
+function showTip(html, event) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = "block";
+  moveTip(event);
+}
+function moveTip(event) {
+  tooltip.style.left = (event.clientX + 14) + "px";
+  tooltip.style.top  = (event.clientY - 10) + "px";
+}
+function hideTip() { tooltip.style.display = "none"; }
+
+// ── Load data ─────────────────────────────────────────────────────────────────
+d3.json("data/aarhus_analytics.json?v=" + Date.now()).then(data => {
+  const zones = data.zones;
+
+  // Derive vessel-type list from exported data
+  const allTypes = [...new Set(data.zone_daily_traffic.map(d => d.vessel_type))].sort();
+
+  // State
+  let activeZones  = [...zones];
+  let activeTypes  = [...allTypes];
+  let heatmapZone  = zones[0];
+
+  // ── Global zone selector (multi-select) ───────────────────────────────────
+  const zoneBar = document.getElementById("zone-bar");
+  zones.forEach(z => {
+    const btn = document.createElement("button");
+    btn.className = "zone-btn active";
+    btn.textContent = data.zone_labels[z];
+    btn.dataset.zone = z;
+    btn.style.setProperty("--c", ZONE_COLORS[z]);
+    btn.addEventListener("click", () => {
+      const idx = activeZones.indexOf(z);
+      if (idx === -1) {
+        activeZones.push(z);
+        btn.classList.add("active");
+      } else {
+        if (activeZones.length === 1) return;
+        activeZones.splice(idx, 1);
+        btn.classList.remove("active");
+      }
+      update(activeZones);
+    });
+    zoneBar.appendChild(btn);
+  });
+
+  // ── Vessel-type selector (multi-select, mirrors zone selector style) ────────
+  const typeBar = document.getElementById("type-bar");
+
+  function syncTypeBtnUI() {
+    typeBar.querySelectorAll(".type-btn[data-type]").forEach(b =>
+      b.classList.toggle("active", activeTypes.includes(b.dataset.type))
+    );
+  }
+
+  // All / None meta buttons
+  const typeAllBtn = document.createElement("button");
+  typeAllBtn.className = "type-btn";
+  typeAllBtn.textContent = "All";
+  typeAllBtn.addEventListener("click", () => {
+    activeTypes = [...allTypes];
+    syncTypeBtnUI();
+    update(activeZones);
+  });
+  typeBar.appendChild(typeAllBtn);
+
+  const typeNoneBtn = document.createElement("button");
+  typeNoneBtn.className = "type-btn";
+  typeNoneBtn.textContent = "None";
+  typeNoneBtn.addEventListener("click", () => {
+    activeTypes = [];
+    syncTypeBtnUI();
+    update(activeZones);
+  });
+  typeBar.appendChild(typeNoneBtn);
+
+  allTypes.forEach(t => {
+    const btn = document.createElement("button");
+    btn.className = "type-btn active";
+    btn.textContent = t;
+    btn.dataset.type = t;
+    btn.addEventListener("click", () => {
+      const idx = activeTypes.indexOf(t);
+      if (idx === -1) {
+        activeTypes.push(t);
+        btn.classList.add("active");
+      } else {
+        activeTypes.splice(idx, 1);
+        btn.classList.remove("active");
+      }
+      update(activeZones);
+    });
+    typeBar.appendChild(btn);
+  });
+
+  // ── Heatmap zone selector (single-select) ─────────────────────────────────
+  const hzBtns = document.getElementById("heatmap-zone-btns");
+  zones.forEach(z => {
+    const btn = document.createElement("button");
+    btn.className = "hz-btn" + (z === heatmapZone ? " active" : "");
+    btn.textContent = data.zone_labels[z];
+    btn.style.setProperty("--c", ZONE_COLORS[z]);
+    btn.addEventListener("click", () => {
+      heatmapZone = z;
+      hzBtns.querySelectorAll(".hz-btn").forEach(b => b.classList.toggle("active", b === btn));
+      renderHeatmap(heatmapZone, activeTypes);
+    });
+    hzBtns.appendChild(btn);
+  });
+
+  // ── KPI cards — computed from zone-granular datasets so they react to the
+  //   zone selector.  Only the anchorage-specific cards depend on anchorage
+  //   being active; they show "—" otherwise.
+  // ──────────────────────────────────────────────────────────────────────────
+  function renderKPIs(activeZones) {
+    const strip = document.getElementById("kpi-strip");
+    strip.innerHTML = "";
+
+    // 1. Total vessel-hours — sum zone_daily_traffic for active zones + types.
+    const totalVH = d3.sum(
+      data.zone_daily_traffic.filter(d =>
+        activeZones.includes(d.zone) && activeTypes.includes(d.vessel_type)
+      ),
+      d => d.vessel_count
+    );
+
+    // 2. Busiest zone among active zones (by vessel-hours).
+    const zoneVH = {};
+    data.zone_daily_traffic
+      .filter(d => activeZones.includes(d.zone) && activeTypes.includes(d.vessel_type))
+      .forEach(d => { zoneVH[d.zone] = (zoneVH[d.zone] || 0) + d.vessel_count; });
+    const busiestEntry = Object.entries(zoneVH).sort((a, b) => b[1] - a[1])[0];
+    const busiestZone = busiestEntry ? busiestEntry[0] : null;
+    const busiestVH   = busiestEntry ? busiestEntry[1] : null;
+
+    // 3. Peak avg-hourly count — sum avg_vessel_count across active types per
+    //    (zone, dow, hour), then take the max across all cells.
+    const heatRows = data.zone_congestion_heatmap.filter(d =>
+      activeZones.includes(d.zone) && activeTypes.includes(d.vessel_type)
+    );
+    let peakAvg = null;
+    if (heatRows.length) {
+      const byCell = d3.rollup(heatRows,
+        v => d3.sum(v, d => d.avg_vessel_count),
+        d => `${d.zone}|${d.dow}|${d.hour}`
+      );
+      peakAvg = d3.max([...byCell.values()]);
+    }
+
+    // 4. Anchorage wait — weighted avg dwell for Cargo & Tanker in anchorage.
+    const anchorageActive = activeZones.includes("anchorage");
+    const dwellRows = data.dwell_by_zone_type.filter(d =>
+      d.zone === "anchorage" && ["Cargo","Tanker"].includes(d.vessel_type) &&
+      activeTypes.includes(d.vessel_type)
+    );
+    const totalVisits = d3.sum(dwellRows, d => d.visit_count);
+    const weightedDwell = totalVisits > 0
+      ? d3.sum(dwellRows, d => d.avg_dwell_hours * d.visit_count) / totalVisits
+      : null;
+
+    // 5. % moored in anchorage — recompute from raw ping counts for active types.
+    const mooredRows = data.navstatus_by_zone.filter(
+      d => d.zone === "anchorage" && activeTypes.includes(d.vessel_type)
+    );
+    const totalPings = d3.sum(mooredRows, d => d.ping_count);
+    const mooredPings = d3.sum(
+      mooredRows.filter(d => d.nav_status === "Moored"),
+      d => d.ping_count
+    );
+    const pctMoored = totalPings > 0
+      ? (mooredPings / totalPings * 100).toFixed(1)
+      : null;
+
+    const kpis = [
+      {
+        label: "Vessel-hours (Feb)",
+        value: d3.format(",")(totalVH),
+        sub: "across selected zones",
+      },
+      {
+        label: "Avg peak hourly count",
+        value: peakAvg != null ? peakAvg.toFixed(1) : "—",
+        sub: "highest avg vessels in any zone-hour",
+      },
+      {
+        label: "Busiest zone",
+        value: busiestZone ? data.zone_labels[busiestZone] : "—",
+        sub: busiestVH != null ? d3.format(",")(busiestVH) + " vessel-hours" : "",
+      },
+      {
+        label: "Anchorage wait (cargo & tanker)",
+        value: anchorageActive && weightedDwell != null
+          ? weightedDwell.toFixed(1) + " h"
+          : "—",
+        sub: anchorageActive ? "avg dwell, excl. transits" : "anchorage not selected",
+      },
+      {
+        label: "Stationary in anchorage",
+        value: anchorageActive && pctMoored != null ? String(pctMoored) + "%" : "—",
+        sub: anchorageActive ? "of pings showing moored status" : "anchorage not selected",
+      },
+    ];
+
+    kpis.forEach(k => {
+      const card = document.createElement("div");
+      card.className = "kpi-card";
+      card.innerHTML = `<div class="label">${k.label}</div><div class="value">${k.value}</div><div class="sub">${k.sub}</div>`;
+      strip.appendChild(card);
+    });
+  }
+
+  // ── Trend — stacked area by zone ──────────────────────────────────────────
+  function renderTrend(activeZones, activeTypes) {
+    const el = document.getElementById("chart-trend");
+    el.innerHTML = "";
+
+    const dateSet = new Set(data.zone_daily_traffic.map(d => d.date));
+    const dates = [...dateSet].sort();
+
+    const byDate = dates.map(dateStr => {
+      const row = { dateStr, date: new Date(dateStr + "T12:00:00") };
+      zones.forEach(z => {
+        // Sum vessel_count across rows matching zone + date + active vessel types.
+        // MMSI uniqueness is per (zone, date, vessel_type) so summing is correct.
+        const total = d3.sum(
+          data.zone_daily_traffic.filter(d =>
+            d.zone === z && d.date === dateStr && activeTypes.includes(d.vessel_type)
+          ),
+          d => d.vessel_count
+        );
+        row[z] = (activeZones.includes(z)) ? total : 0;
+      });
+      return row;
+    });
+
+    const activeStack = activeZones.slice().sort((a, b) => zones.indexOf(a) - zones.indexOf(b));
+    const series = d3.stack().keys(activeStack)(byDate);
+
+    const showLegend = activeStack.length > 0;
+    const W = el.getBoundingClientRect().width || 900;
+    const H = 200;
+    const margin = { top: 12, right: showLegend ? 130 : 16, bottom: 30, left: 44 };
+    const iW = W - margin.left - margin.right;
+    const iH = H - margin.top - margin.bottom;
+
+    const x = d3.scaleTime()
+      .domain(d3.extent(byDate, d => d.date))
+      .range([0, iW]);
+
+    const maxY = d3.max(byDate, row => activeStack.reduce((s, z) => s + row[z], 0));
+    const y = d3.scaleLinear().domain([0, maxY * 1.1]).range([iH, 0]);
+
+    const area = z => d3.area()
+      .x(d => x(d.data.date))
+      .y0(d => y(d[0]))
+      .y1(d => y(d[1]))
+      .curve(d3.curveMonotoneX);
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    g.append("g").attr("class","grid")
+      .call(d3.axisLeft(y).tickSize(-iW).tickFormat("").ticks(5));
+
+    series.forEach(s => {
+      const z = s.key;
+      g.append("path")
+        .datum(s)
+        .attr("d", area(z))
+        .attr("fill", ZONE_COLORS[z])
+        .attr("opacity", 0.75)
+        .on("mouseover", event => showTip(`<b>${data.zone_labels[z]}</b>`, event))
+        .on("mousemove", moveTip)
+        .on("mouseout",  hideTip);
+    });
+
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+      .call(d3.axisBottom(x).ticks(d3.timeDay.every(7)).tickFormat(d3.timeFormat("%b %d")));
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(5));
+
+    if (showLegend) {
+      const lg = svg.append("g")
+        .attr("transform", `translate(${W - margin.right + 10}, ${margin.top})`);
+      [...activeStack].reverse().forEach((z, i) => {
+        const row = lg.append("g").attr("transform", `translate(0,${i * 16})`);
+        row.append("rect").attr("width", 10).attr("height", 10).attr("rx", 2)
+          .attr("fill", ZONE_COLORS[z]).attr("opacity", 0.75);
+        row.append("text").attr("x", 14).attr("y", 9)
+          .attr("font-size","10px").attr("fill","#333")
+          .text(data.zone_labels[z]);
+      });
+    }
+  }
+
+  // ── Grouped bar — avg dwell by vessel type, one group per active zone ──────
+  function renderDwell(activeZones, activeTypes) {
+    const el = document.getElementById("chart-dwell");
+    el.innerHTML = "";
+
+    const rows = data.dwell_by_zone_type.filter(d =>
+      activeZones.includes(d.zone) && d.avg_dwell_hours > 0 &&
+      activeTypes.includes(d.vessel_type)
+    );
+    if (!rows.length) { el.textContent = "No dwell data for selection."; return; }
+
+    const types = [...new Set(rows.map(d => d.vessel_type))].sort();
+
+    const W = el.getBoundingClientRect().width || 420;
+    const H = 220;
+    const margin = { top: 12, right: 16, bottom: 60, left: 44 };
+    const iW = W - margin.left - margin.right;
+    const iH = H - margin.top - margin.bottom;
+
+    const x0 = d3.scaleBand().domain(types).range([0, iW]).padding(0.2);
+    const x1 = d3.scaleBand().domain(activeZones).range([0, x0.bandwidth()]).padding(0.05);
+    const y  = d3.scaleLinear()
+      .domain([0, d3.max(rows, d => d.avg_dwell_hours) * 1.1])
+      .range([iH, 0]);
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    g.append("g").attr("class","grid")
+      .call(d3.axisLeft(y).tickSize(-iW).tickFormat("").ticks(5));
+
+    types.forEach(type => {
+      activeZones.forEach(z => {
+        const d = rows.find(r => r.vessel_type === type && r.zone === z);
+        if (!d) return;
+        g.append("rect")
+          .attr("x", x0(type) + x1(z))
+          .attr("y", y(d.avg_dwell_hours))
+          .attr("width", x1.bandwidth())
+          .attr("height", iH - y(d.avg_dwell_hours))
+          .attr("fill", ZONE_COLORS[z])
+          .attr("rx", 2)
+          .on("mouseover", event => showTip(
+            `<b>${data.zone_labels[z]}</b><br>${type}: <b>${d.avg_dwell_hours.toFixed(1)} h</b><br>(${d.visit_count} visits)`, event
+          ))
+          .on("mousemove", moveTip)
+          .on("mouseout",  hideTip);
+      });
+    });
+
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+      .call(d3.axisBottom(x0).tickSize(0))
+      .selectAll("text")
+      .attr("transform","rotate(-30)").attr("text-anchor","end").attr("dy","0.5em");
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(5).tickFormat(d => d + "h"));
+
+    const lg = svg.append("g").attr("transform", `translate(${margin.left}, ${H - 14})`);
+    activeZones.forEach((z, i) => {
+      const row = lg.append("g").attr("transform", `translate(${i * 120}, 0)`);
+      row.append("rect").attr("width", 9).attr("height", 9).attr("rx", 2).attr("fill", ZONE_COLORS[z]);
+      row.append("text").attr("x", 13).attr("y", 8).attr("font-size","9px").attr("fill","#555")
+        .text(data.zone_labels[z]);
+    });
+  }
+
+  // ── Multi-zone speed lines — avg SOG by hour, one line per active zone ─────
+  function renderSpeed(activeZones, activeTypes) {
+    const el = document.getElementById("chart-speed");
+    el.innerHTML = "";
+
+    // Aggregate speed stats across the active vessel types for each (zone, hour).
+    // When multiple types are selected, we average the mean/median/p025/p975 values
+    // across types (weighted equally — approximation acceptable for display).
+    function aggregateByHour(z) {
+      const hours = d3.range(0, 24);
+      return hours.map(h => {
+        const matching = data.zone_speed_all.filter(d =>
+          d.zone === z && d.hour === h && activeTypes.includes(d.vessel_type)
+        );
+        if (!matching.length) return null;
+        return {
+          hour:       h,
+          sog_mean:   d3.mean(matching, d => d.sog_mean),
+          sog_median: d3.mean(matching, d => d.sog_median),
+          sog_p025:   d3.mean(matching, d => d.sog_p025),
+          sog_p95:    d3.mean(matching, d => d.sog_p95),
+          sog_p975:   d3.mean(matching, d => d.sog_p975),
+        };
+      }).filter(Boolean);
+    }
+
+    const byZone = {};
+    activeZones.forEach(z => { byZone[z] = aggregateByHour(z); });
+
+    const allRows = Object.values(byZone).flat();
+    if (!allRows.length) { el.textContent = "No speed data for selection."; return; }
+
+    const W = el.getBoundingClientRect().width || 420;
+    const H = 240;
+    const margin = { top: 16, right: 16, bottom: 30, left: 40 };
+    const iW = W - margin.left - margin.right;
+    const iH = H - margin.top - margin.bottom;
+
+    const x = d3.scaleLinear().domain([0, 23]).range([0, iW]);
+    const maxSOG = d3.max(allRows, d => d.sog_p975 ?? d.sog_mean) * 1.15 || 1;
+    const y = d3.scaleLinear().domain([0, maxSOG]).range([iH, 0]);
+
+    const bandArea = (rows, zone) => d3.area()
+      .x(d => x(d.hour))
+      .y0(d => y(d.sog_p025))
+      .y1(d => y(d.sog_p975))
+      .curve(d3.curveCatmullRom.alpha(0.5))(rows);
+
+    const line = d3.line()
+      .x(d => x(d.hour))
+      .y(d => y(d.sog_mean))
+      .curve(d3.curveCatmullRom.alpha(0.5));
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    g.append("g").attr("class","grid")
+      .call(d3.axisLeft(y).tickSize(-iW).tickFormat("").ticks(5));
+
+    activeZones.forEach(z => {
+      const rows = byZone[z];
+      if (!rows.length) return;
+      const color = ZONE_COLORS[z];
+
+      // 95 % confidence band (p025–p975)
+      g.append("path")
+        .attr("d", bandArea(rows, z))
+        .attr("fill", color)
+        .attr("opacity", 0.12)
+        .attr("pointer-events", "none");
+
+      // Mean line
+      g.append("path")
+        .datum(rows)
+        .attr("d", line)
+        .attr("fill", "none")
+        .attr("stroke", color)
+        .attr("stroke-width", 2)
+        .attr("opacity", 0.85);
+
+      // Hover dots (transparent large + visible small)
+      g.selectAll(`.dot-${z}`).data(rows).join("circle")
+        .attr("class", `dot-${z}`)
+        .attr("cx", d => x(d.hour))
+        .attr("cy", d => y(d.sog_mean))
+        .attr("r", 7)
+        .attr("fill", "transparent")
+        .on("mouseover", (event, d) => showTip(
+          `<b>${data.zone_labels[z]}</b> · ${String(d.hour).padStart(2,"0")}:00<br>`+
+          `Mean: <b>${d.sog_mean.toFixed(2)} kn</b>  ·  Median: ${d.sog_median.toFixed(2)} kn<br>`+
+          `P95: ${d.sog_p95.toFixed(2)} kn  ·  95% band: [${d.sog_p025.toFixed(2)}, ${d.sog_p975.toFixed(2)}]`, event
+        ))
+        .on("mousemove", moveTip)
+        .on("mouseout",  hideTip);
+
+      g.selectAll(`.vdot-${z}`).data(rows).join("circle")
+        .attr("class", `vdot-${z}`)
+        .attr("cx", d => x(d.hour))
+        .attr("cy", d => y(d.sog_mean))
+        .attr("r", 2.5)
+        .attr("fill", color)
+        .attr("pointer-events", "none");
+    });
+
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+      .call(d3.axisBottom(x).tickValues(d3.range(0,24,4))
+        .tickFormat(h => String(h).padStart(2,"0")+":00"));
+    g.append("g").attr("class","axis")
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d => d + " kn"));
+
+    // Legend
+    const lgX = margin.left;
+    const lgY = H - 2;
+    const lg = svg.append("g").attr("transform", `translate(${lgX},${lgY})`);
+    let lx = 0;
+    activeZones.forEach(z => {
+      const item = lg.append("g").attr("transform", `translate(${lx},0)`);
+      item.append("line").attr("x1",0).attr("x2",14).attr("y1",-4).attr("y2",-4)
+        .attr("stroke", ZONE_COLORS[z]).attr("stroke-width", 2);
+      const label = data.zone_labels[z].replace(" (Ferry/RoRo)","").replace(" (Container)","");
+      item.append("text").attr("x",18).attr("y",0).attr("font-size","9px").attr("fill","#555")
+        .text(label);
+      lx += label.length * 5.2 + 28;
+    });
+  }
+
+  // ── Stacked % bar — nav status by zone ─────────────────────────────────────
+  function renderNavStatus(activeZones, activeTypes) {
+    const el = document.getElementById("chart-navstatus");
+    el.innerHTML = "";
+
+    const rows = data.navstatus_by_zone.filter(d =>
+      activeZones.includes(d.zone) && activeTypes.includes(d.vessel_type)
+    );
+    if (!rows.length) { el.textContent = "No data for selection."; return; }
+
+    const statusTotals = d3.rollup(rows, v => d3.sum(v, d => d.ping_count), d => d.nav_status);
+    const topStatuses = [...statusTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([s]) => s);
+
+    const zoneTotals = d3.rollup(rows, v => d3.sum(v, d => d.ping_count), d => d.zone);
+    NAV_COLORS.domain(topStatuses);
+
+    const W = el.getBoundingClientRect().width || 420;
+    const barH = 32;
+    const legendH = Math.ceil(topStatuses.length / 2) * 14 + 8;
+    const margin = { top: 12, right: 16, bottom: legendH, left: 120 };
+    const H = activeZones.length * (barH + 6) + margin.top + margin.bottom;
+    const iW = W - margin.left - margin.right;
+
+    const svg = d3.select(el).append("svg").attr("width", W).attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    activeZones.forEach((z, zi) => {
+      const zoneRows = rows.filter(r => r.zone === z);
+      const total = zoneTotals.get(z) || 1;
+      let x0 = 0;
+
+      topStatuses.forEach(status => {
+        const row = zoneRows.find(r => r.nav_status === status);
+        const pct = row ? row.ping_count / total : 0;
+        const bW = pct * iW;
+        if (bW < 0.5) return;
+        g.append("rect")
+          .attr("x", x0).attr("y", zi * (barH + 6))
+          .attr("width", bW).attr("height", barH)
+          .attr("fill", NAV_COLORS(status))
+          .on("mouseover", event => showTip(
+            `<b>${data.zone_labels[z]}</b><br>${status}<br>${(pct * 100).toFixed(1)}% of pings`, event
+          ))
+          .on("mousemove", moveTip)
+          .on("mouseout",  hideTip);
+        if (bW > 30) {
+          g.append("text")
+            .attr("x", x0 + bW / 2).attr("y", zi * (barH + 6) + barH / 2 + 4)
+            .attr("text-anchor","middle").attr("font-size","9px").attr("fill","#fff").attr("pointer-events","none")
+            .text((pct * 100).toFixed(0) + "%");
+        }
+        x0 += bW;
+      });
+
+      g.append("text")
+        .attr("x", -8).attr("y", zi * (barH + 6) + barH / 2 + 4)
+        .attr("text-anchor","end").attr("font-size","10px").attr("fill","#555")
+        .text(data.zone_labels[z].replace(" (Ferry/RoRo)","").replace(" (Container)",""));
+    });
+
+    const lg = svg.append("g").attr("transform", `translate(${margin.left}, ${H - legendH + 4})`);
+    topStatuses.forEach((s, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const item = lg.append("g").attr("transform", `translate(${col * (iW / 2)},${row * 14})`);
+      item.append("rect").attr("width", 9).attr("height", 9).attr("rx", 2).attr("fill", NAV_COLORS(s));
+      item.append("text").attr("x", 13).attr("y", 8).attr("font-size","9px").attr("fill","#555").text(s);
+    });
+  }
+
+  // ── Small-multiple donuts — vessel type mix per active zone ────────────────
+  function renderDonuts(activeZones, activeTypes) {
+    const grid = document.getElementById("donuts-grid");
+    grid.innerHTML = "";
+
+    activeZones.forEach(z => {
+      const cell = document.createElement("div");
+      cell.className = "donut-cell";
+
+      const label = document.createElement("div");
+      label.className = "donut-label";
+      label.textContent = data.zone_labels[z].replace(" (Ferry/RoRo)","").replace(" (Container)","");
+      label.style.borderBottom = `2px solid ${ZONE_COLORS[z]}`;
+      label.style.paddingBottom = "3px";
+      cell.appendChild(label);
+
+      const svgEl = document.createElement("div");
+      cell.appendChild(svgEl);
+      grid.appendChild(cell);
+
+      const types = data.zone_type_mix.filter(d =>
+        d.zone === z && activeTypes.includes(d.vessel_type)
+      );
+      if (!types.length) return;
+
+      const total = d3.sum(types, d => d.visit_count);
+      const R = 56;
+      const W = 160, H = R * 2 + 20;
+
+      const svg = d3.select(svgEl).append("svg").attr("width", W).attr("height", H);
+      const gd = svg.append("g").attr("transform", `translate(${W/2},${R + 8})`);
+
+      const pie = d3.pie().value(d => d.visit_count).sort(null);
+      const arc = d3.arc().innerRadius(R * 0.5).outerRadius(R);
+      const arcH = d3.arc().innerRadius(R * 0.5).outerRadius(R + 5);
+
+      gd.selectAll("path").data(pie(types)).join("path")
+        .attr("d", arc)
+        .attr("fill", d => TYPE_COLORS[d.data.vessel_type] || "#ccc")
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 1.5)
+        .on("mouseover", function(event, d) {
+          d3.select(this).attr("d", arcH);
+          const pct = (d.data.visit_count / total * 100).toFixed(1);
+          showTip(`<b>${data.zone_labels[z]}</b><br>${d.data.vessel_type}<br>${d.data.visit_count} visits (${pct}%)`, event);
+        })
+        .on("mousemove", moveTip)
+        .on("mouseout", function() { d3.select(this).attr("d", arc); hideTip(); });
+
+      gd.append("text").attr("text-anchor","middle").attr("dy","-0.1em")
+        .attr("font-size","0.95rem").attr("font-weight","700").text(total);
+      gd.append("text").attr("text-anchor","middle").attr("dy","1em")
+        .attr("font-size","0.6rem").attr("fill","#999").text("visits");
+    });
+
+    const donutTypes = [...new Set(data.zone_type_mix.map(d => d.vessel_type))]
+      .sort((a, b) => {
+        const ta = d3.sum(data.zone_type_mix.filter(d => d.vessel_type === a), d => d.visit_count);
+        const tb = d3.sum(data.zone_type_mix.filter(d => d.vessel_type === b), d => d.visit_count);
+        return tb - ta;
+      });
+
+    const legendDiv = document.createElement("div");
+    legendDiv.style.cssText = "grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:8px; font-size:10px; color:#555;";
+    donutTypes.forEach(t => {
+      const item = document.createElement("span");
+      item.style.cssText = "display:flex; align-items:center; gap:4px;";
+      item.innerHTML = `<svg width="10" height="10"><rect width="10" height="10" rx="2" fill="${TYPE_COLORS[t] || '#ccc'}"/></svg>${t}`;
+      legendDiv.appendChild(item);
+    });
+    grid.appendChild(legendDiv);
+  }
+
+  // ── Zone congestion heatmap — avg vessel count by dow × hour ──────────────
+  function renderHeatmap(zone, activeTypes) {
+    const el = document.getElementById("chart-heatmap");
+    el.innerHTML = "";
+
+    // Filter to zone + active types; sum avg_vessel_count across vessel types
+    // so each (dow, hour) cell shows total avg vessels for the active type subset.
+    const rows = data.zone_congestion_heatmap.filter(d =>
+      d.zone === zone && activeTypes.includes(d.vessel_type)
+    );
+    if (!rows.length) { el.textContent = "No heatmap data for this zone."; return; }
+
+    // Build a lookup: mat[dow][hour] = sum of avg_vessel_count across active types
+    const mat = Array.from({length: 7}, () => Array(24).fill(0));
+    rows.forEach(d => { mat[d.dow][d.hour] += d.avg_vessel_count; });
+
+    const maxVal = d3.max(rows, d => d.avg_vessel_count) || 1;
+    const colorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, maxVal]);
+
+    const W = el.getBoundingClientRect().width || 900;
+    const cellH = 22;
+    const cellW = Math.floor((W - 52) / 24);
+    const margin = { top: 8, right: 8, bottom: 28, left: 44 };
+    const iW = cellW * 24;
+    const iH = cellH * 7;
+    const H = iH + margin.top + margin.bottom;
+
+    const svg = d3.select(el).append("svg")
+      .attr("width", iW + margin.left + margin.right)
+      .attr("height", H);
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Cells
+    for (let dow = 0; dow < 7; dow++) {
+      for (let hour = 0; hour < 24; hour++) {
+        const val = mat[dow][hour];
+        g.append("rect")
+          .attr("x", hour * cellW)
+          .attr("y", dow * cellH)
+          .attr("width", cellW - 1)
+          .attr("height", cellH - 1)
+          .attr("rx", 2)
+          .attr("fill", val > 0 ? colorScale(val) : "#f0f0f0")
+          .on("mouseover", event => showTip(
+            `<b>${DOW_LABELS[dow]} ${String(hour).padStart(2,"0")}:00</b><br>`+
+            `Avg vessels: <b>${val.toFixed(1)}</b>`, event
+          ))
+          .on("mousemove", moveTip)
+          .on("mouseout",  hideTip);
+      }
+    }
+
+    // Y-axis: day-of-week labels
+    DOW_LABELS.forEach((d, i) => {
+      g.append("text")
+        .attr("x", -6).attr("y", i * cellH + cellH / 2 + 4)
+        .attr("text-anchor","end")
+        .attr("font-size","10px").attr("fill","#888")
+        .text(d);
+    });
+
+    // X-axis: hour labels every 4 hours
+    d3.range(0, 24, 4).forEach(h => {
+      g.append("text")
+        .attr("x", h * cellW + cellW / 2)
+        .attr("y", iH + 16)
+        .attr("text-anchor","middle")
+        .attr("font-size","10px").attr("fill","#888")
+        .text(String(h).padStart(2,"0") + ":00");
+    });
+
+    // Color legend (gradient bar)
+    const lgW = Math.min(180, iW / 3);
+    const lgG = svg.append("g")
+      .attr("transform", `translate(${iW + margin.left - lgW}, ${H - margin.bottom + 6})`);
+
+    const defs = svg.append("defs");
+    const grad = defs.append("linearGradient").attr("id","hm-grad");
+    [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+      grad.append("stop").attr("offset", t)
+        .attr("stop-color", colorScale(t * maxVal));
+    });
+    lgG.append("rect").attr("width", lgW).attr("height", 8).attr("rx", 2)
+      .attr("fill","url(#hm-grad)");
+    lgG.append("text").attr("x",0).attr("y",18).attr("font-size","9px").attr("fill","#888").text("0");
+    lgG.append("text").attr("x",lgW).attr("y",18).attr("font-size","9px").attr("fill","#888")
+      .attr("text-anchor","end").text(maxVal.toFixed(1) + " avg vessels");
+  }
+
+  // ── Zones inset (Leaflet mini-map of the four sub-zones) ──────────────────
+  //   Draws once — sub-zone polygons come from prepare_aarhus_data._zone_polygons
+  //   (sourced from config.AARHUS_ZONES) so the inset and the Aarhus map stay
+  //   in sync without hardcoding vertices here.
+  function renderZonesInset() {
+    if (typeof L === "undefined") return;
+    const container = document.getElementById("zones-inset");
+    if (!container || !data.zone_polygons) return;
+
+    const insetMap = L.map(container, {
+      attributionControl: false,
+      zoomControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false,
+      touchZoom: false,
+    });
+
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+      { subdomains: "abcd", maxZoom: 14 }
+    ).addTo(insetMap);
+
+    const allLatLngs = [];
+    zones.forEach(z => {
+      const verts = data.zone_polygons[z];
+      if (!verts || !verts.length) return;
+      L.polygon(verts, {
+        color:       ZONE_COLORS[z],
+        weight:      1.5,
+        dashArray:   "4 3",
+        fillColor:   ZONE_COLORS[z],
+        fillOpacity: 0.18,
+      })
+        .bindTooltip(data.zone_labels[z], {
+          permanent: true,
+          direction: "center",
+          className: "inset-zone-label",
+        })
+        .addTo(insetMap);
+      verts.forEach(v => allLatLngs.push(v));
+    });
+
+    if (allLatLngs.length) {
+      insetMap.fitBounds(allLatLngs, { padding: [6, 6] });
+    }
+  }
+
+  // ── Master update ──────────────────────────────────────────────────────────
+  function update(activeZones) {
+    renderKPIs(activeZones);  // reads activeTypes from closure
+    renderTrend(activeZones, activeTypes);
+    renderDwell(activeZones, activeTypes);
+    renderSpeed(activeZones, activeTypes);
+    renderNavStatus(activeZones, activeTypes);
+    renderDonuts(activeZones, activeTypes);
+    renderHeatmap(heatmapZone, activeTypes);
+  }
+
+  renderZonesInset();
+  update(activeZones);
+});
+</script>
+</body>
+</html>

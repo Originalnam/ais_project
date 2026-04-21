@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIS Vessel Traffic — Danish Waters · 2026-02-01</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0d1a;
+      overflow: hidden;
+    }
+
+    /* ── Map ──────────────────────────────────────────────────────────────── */
+    #map {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Vessel canvas — absolutely positioned on top of map tiles */
+    #vessel-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      pointer-events: none;
+      z-index: 400;
+    }
+
+    /* ── Header badge ────────────────────────────────────────────────────── */
+    #header {
+      position: fixed;
+      top: 18px; left: 18px;
+      z-index: 1000;
+      background: rgba(10, 10, 25, 0.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 12px;
+      padding: 12px 18px;
+      color: #fff;
+    }
+    #header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: #e8e8f0;
+    }
+    #header p {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      margin-top: 3px;
+    }
+
+    /* ── Controls panel ──────────────────────────────────────────────────── */
+    #controls {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(10, 10, 25, 0.88);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      padding: 16px 22px 14px;
+      color: #fff;
+      min-width: 620px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Time row */
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #btn-play {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #btn-play:hover { background: rgba(255,255,255,0.22); }
+
+    #time-display {
+      font-size: 14px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #c8c8e0;
+      width: 75px;
+      flex-shrink: 0;
+      letter-spacing: 0.04em;
+    }
+
+    #slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.18);
+      outline: none;
+      cursor: pointer;
+    }
+    #slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #7ba7e8;
+      cursor: pointer;
+    }
+    #slider::-moz-range-thumb {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #7ba7e8;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* Trail row */
+    .ctrl-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      width: 38px;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      padding: 4px 11px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: transparent;
+      color: rgba(255,255,255,0.55);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .pill:hover { border-color: rgba(255,255,255,0.4); color: rgba(255,255,255,0.85); }
+    .pill.active {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.4);
+      color: #fff;
+    }
+
+    /* Type filter pills — colored dot + label */
+    .type-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: transparent;
+      color: rgba(255,255,255,0.5);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .type-pill:hover { border-color: rgba(255,255,255,0.35); color: rgba(255,255,255,0.8); }
+    .type-pill.active {
+      border-color: rgba(255,255,255,0.32);
+      color: #fff;
+    }
+    .type-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Vessel count badge ────────────────────────────────────────────────── */
+    #vessel-count {
+      position: fixed;
+      top: 18px; right: 18px;
+      z-index: 1000;
+      background: rgba(10, 10, 25, 0.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 10px;
+      padding: 9px 14px;
+      color: rgba(255,255,255,0.5);
+      font-size: 11px;
+    }
+    #vessel-count strong {
+      color: #e8e8f0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Tooltip ─────────────────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed;
+      z-index: 2000;
+      pointer-events: none;
+      background: rgba(10, 10, 25, 0.92);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.7;
+      max-width: 220px;
+      display: none;
+    }
+    #tooltip .tt-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #e0e0f8;
+      margin-bottom: 3px;
+    }
+    #tooltip .tt-row {
+      color: rgba(255,255,255,0.55);
+    }
+    #tooltip .tt-row span {
+      color: rgba(255,255,255,0.88);
+    }
+
+    /* ── Loading overlay ─────────────────────────────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      background: #0d0d1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      gap: 18px;
+    }
+    #loading p { font-size: 14px; color: rgba(255,255,255,0.5); }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #7ba7e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Port marker icon ────────────────────────────────────────────────── */
+    .port-icon {
+      background: none;
+      border: none;
+    }
+    .port-icon svg {
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
+    }
+
+    /* ── Port label tooltip ──────────────────────────────────────────────── */
+    .port-label {
+      background: rgba(10, 10, 25, 0.88) !important;
+      border: 1px solid rgba(123, 167, 232, 0.4) !important;
+      border-radius: 8px !important;
+      color: #c8d8f0 !important;
+      font-size: 12px !important;
+      font-weight: 500 !important;
+      padding: 5px 10px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+      white-space: nowrap;
+    }
+    .port-label::before { display: none !important; }
+    .port-label strong { color: #e8e8f8; font-weight: 700; }
+
+    /* ── Header caption (filter-inclusion bbox legend) ───────────────────── */
+    .header-caption {
+      display: flex !important;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px !important;
+      color: rgba(255,255,255,0.55) !important;
+    }
+    .bbox-swatch {
+      display: inline-block;
+      width: 18px;
+      height: 10px;
+      border: 1.5px dashed #ffd166;
+      background: rgba(255, 209, 102, 0.10);
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+
+    /* ── Port bbox corner label ──────────────────────────────────────────── */
+    .bbox-label {
+      background: rgba(255, 209, 102, 0.92) !important;
+      border: none !important;
+      border-radius: 4px !important;
+      color: #1a1a2e !important;
+      font-size: 10px !important;
+      font-weight: 700 !important;
+      padding: 2px 6px !important;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4) !important;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .bbox-label::before { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Loading overlay -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>Loading vessel data…</p>
+  </div>
+
+  <!-- Map -->
+  <div id="map"></div>
+  <canvas id="vessel-canvas"></canvas>
+
+  <!-- Header -->
+  <div id="header">
+    <h1>AIS Vessel Traffic</h1>
+    <p>Danish Waters &mdash; 2026-02-01</p>
+    <p class="header-caption">
+      <span class="bbox-swatch"></span>
+      Dashed boxes = filter inclusion area (pipeline/filter.py)
+    </p>
+  </div>
+
+  <!-- Vessel count -->
+  <div id="vessel-count">
+    <strong id="count-visible">—</strong> vessels visible
+  </div>
+
+  <!-- Tooltip -->
+  <div id="tooltip"></div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <!-- Time row -->
+    <div class="ctrl-row">
+      <button id="btn-play" title="Play / Pause">&#9654;</button>
+      <span id="time-display">00:00 UTC</span>
+      <input type="range" id="slider" min="0" max="1439" value="0" step="1">
+    </div>
+    <!-- Trail row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Trail</span>
+      <div class="btn-group" id="trail-options">
+        <button class="pill" data-trail="30">30 min</button>
+        <button class="pill active" data-trail="60">1 hr</button>
+        <button class="pill" data-trail="180">3 hr</button>
+        <button class="pill" data-trail="Infinity">All day</button>
+      </div>
+    </div>
+    <!-- Ship type filter row -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Type</span>
+      <div class="btn-group" id="type-filters"></div>
+    </div>
+  </div>
+
+  <script>
+  // ── Tab-10 palette (matches matplotlib/seaborn tab10) ─────────────────────
+  const TYPE_COLORS = {
+    'Cargo':         '#1f77b4',
+    'Tanker':        '#ff7f0e',
+    'Passenger':     '#2ca02c',
+    'Fishing':       '#d62728',
+    'Tug':           '#9467bd',
+    'Pleasure Craft':'#8c564b',
+    'HSC':           '#e377c2',
+    'SAR':           '#7f7f7f',
+    'Other':         '#bcbd22',
+  };
+
+  // Port bboxes are loaded from the payload (viz/prepare_map_data.py reads
+  // config.PORTS, the same source pipeline/filter.py uses as its inclusion
+  // area). This keeps map, pipeline, and config in sync automatically.
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let currentTime = 0;          // minutes from midnight
+  let trailLength = 60;         // minutes (Infinity = show all)
+  let activeTypes = new Set(Object.keys(TYPE_COLORS));
+  let isPlaying = false;
+  let rafId = null;
+  let lastRafTs = null;
+  const SPEED = 20;             // simulation minutes per wall-clock second
+
+  // ── Map setup ─────────────────────────────────────────────────────────────
+  const map = L.map('map', {
+    center: [57.5, 12.0],
+    zoom: 7,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a> | DMA AIS data',
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }
+  ).addTo(map);
+
+  // ── Canvas overlay ────────────────────────────────────────────────────────
+  const canvas = document.getElementById('vessel-canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+
+  function resizeCanvas() {
+    const w = map.getContainer().offsetWidth;
+    const h = map.getContainer().offsetHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
+    draw();
+  }
+
+  map.on('zoom move resize', draw);
+  window.addEventListener('resize', resizeCanvas);
+
+  // ── Port markers & bounding boxes ────────────────────────────────────────
+  // Bboxes are rendered as the filter-inclusion area (pipeline/filter.py)
+  // with a high-contrast amber dashed outline + persistent NW corner label.
+  const PORT_BBOX_FILL   = 'rgba(255, 209, 102, 0.08)';
+  const PORT_BBOX_STROKE = '#ffd166';
+
+  const portIcon = L.divIcon({
+    className: 'port-icon',
+    html: `<svg width="26" height="32" viewBox="0 0 26 32">
+             <!-- pin body -->
+             <path d="M13 1 C7.477 1 3 5.477 3 11 C3 18.5 13 31 13 31 C13 31 23 18.5 23 11 C23 5.477 18.523 1 13 1 Z"
+                   fill="#1a1a2e" stroke="rgba(123,167,232,0.9)" stroke-width="1.8"/>
+             <!-- anchor icon -->
+             <text x="13" y="14.5" text-anchor="middle" font-size="10" fill="rgba(123,167,232,0.95)"
+                   font-family="sans-serif" font-weight="700">⚓</text>
+           </svg>`,
+    iconSize: [26, 32],
+    iconAnchor: [13, 31],
+    tooltipAnchor: [0, -32],
+  });
+
+  function drawPortBboxes(ports) {
+    ports.forEach(p => {
+      const [[latMin, lonMin], [latMax, lonMax]] = p.bbox;
+
+      // Prominent dashed rectangle — the pipeline inclusion area
+      L.rectangle(p.bbox, {
+        color:       PORT_BBOX_STROKE,
+        weight:      2.5,
+        dashArray:   '8 6',
+        fillColor:   PORT_BBOX_FILL,
+        fillOpacity: 1,
+        interactive: false,
+      }).addTo(map);
+
+      // Persistent NW-corner label with the port name
+      L.marker([latMax, lonMin], {
+        icon: L.divIcon({ className: '', html: '', iconSize: [0, 0] }),
+        interactive: false,
+        keyboard: false,
+      })
+        .bindTooltip(p.name, {
+          permanent: true,
+          direction: 'right',
+          className: 'bbox-label',
+          offset: [2, 0],
+        })
+        .addTo(map);
+
+      // Port marker at centroid (unchanged anchor/hover behaviour)
+      L.marker([p.lat, p.lon], { icon: portIcon })
+        .bindTooltip(`<strong>${p.name}</strong>`, {
+          permanent: false,
+          direction: 'top',
+          className: 'port-label',
+          offset: [0, -4],
+        })
+        .addTo(map);
+    });
+  }
+
+  // ── Draw ──────────────────────────────────────────────────────────────────
+  let allVessels = [];
+  let visibleCount = 0;
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const bounds = map.getBounds().pad(0.15);
+    const zoom = map.getZoom();
+    const dotR  = zoom >= 10 ? 5 : zoom >= 8 ? 4 : 3;
+    const lineW = zoom >= 10 ? 2 : 1.5;
+
+    let visible = 0;
+
+    for (const vessel of allVessels) {
+      if (!activeTypes.has(vessel.type)) continue;
+
+      const track = vessel.track;
+      const color = TYPE_COLORS[vessel.type] || '#bcbd22';
+
+      // Find the index of the latest point at or before currentTime
+      let latestIdx = -1;
+      for (let i = 0; i < track.length; i++) {
+        if (track[i].t <= currentTime) latestIdx = i;
+        else break;
+      }
+      if (latestIdx === -1) continue;
+
+      const latest = track[latestIdx];
+      if (!bounds.contains([latest.lat, latest.lon])) continue;
+
+      visible++;
+
+      // Trail: points in [currentTime - trailLength, currentTime]
+      const trailStart = trailLength === Infinity ? -Infinity : currentTime - trailLength;
+      let startIdx = latestIdx;
+      while (startIdx > 0 && track[startIdx - 1].t >= trailStart) startIdx--;
+
+      // Draw trail line
+      if (latestIdx > startIdx) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineW;
+        ctx.globalAlpha = 0.38;
+        ctx.lineJoin = 'round';
+
+        const p0 = map.latLngToContainerPoint([track[startIdx].lat, track[startIdx].lon]);
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = startIdx + 1; i <= latestIdx; i++) {
+          const p = map.latLngToContainerPoint([track[i].lat, track[i].lon]);
+          ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+
+      // Draw position dot
+      ctx.globalAlpha = 0.92;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      const pos = map.latLngToContainerPoint([latest.lat, latest.lon]);
+      ctx.arc(pos.x, pos.y, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    visibleCount = visible;
+    document.getElementById('count-visible').textContent = visible.toLocaleString();
+  }
+
+  // ── Animation loop ────────────────────────────────────────────────────────
+  function step(ts) {
+    if (!isPlaying) return;
+    if (lastRafTs !== null) {
+      const dt = (ts - lastRafTs) / 1000;   // seconds
+      currentTime = Math.min(1439, currentTime + dt * SPEED);
+      document.getElementById('slider').value = Math.round(currentTime);
+      updateTimeDisplay();
+      draw();
+      if (currentTime >= 1439) { isPlaying = false; updatePlayBtn(); return; }
+    }
+    lastRafTs = ts;
+    rafId = requestAnimationFrame(step);
+  }
+
+  function play() {
+    if (currentTime >= 1439) currentTime = 0;
+    isPlaying = true;
+    lastRafTs = null;
+    updatePlayBtn();
+    rafId = requestAnimationFrame(step);
+  }
+
+  function pause() {
+    isPlaying = false;
+    lastRafTs = null;
+    updatePlayBtn();
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  }
+
+  function updatePlayBtn() {
+    document.getElementById('btn-play').innerHTML = isPlaying ? '&#9646;&#9646;' : '&#9654;';
+  }
+
+  // ── Time display ──────────────────────────────────────────────────────────
+  function updateTimeDisplay() {
+    const h = Math.floor(currentTime / 60);
+    const m = Math.floor(currentTime % 60);
+    document.getElementById('time-display').textContent =
+      String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ' UTC';
+  }
+
+  // ── Tooltip / hover ───────────────────────────────────────────────────────
+  const tooltip = document.getElementById('tooltip');
+  const HIT_RADIUS = 14; // px
+
+  map.getContainer().addEventListener('mousemove', e => {
+    const rect = map.getContainer().getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let closest = null;
+    let closestDist = Infinity;
+
+    for (const vessel of allVessels) {
+      if (!activeTypes.has(vessel.type)) continue;
+      const track = vessel.track;
+
+      let latestIdx = -1;
+      for (let i = 0; i < track.length; i++) {
+        if (track[i].t <= currentTime) latestIdx = i;
+        else break;
+      }
+      if (latestIdx === -1) continue;
+
+      const latest = track[latestIdx];
+      const pos = map.latLngToContainerPoint([latest.lat, latest.lon]);
+      const dx = pos.x - mx, dy = pos.y - my;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < HIT_RADIUS && dist < closestDist) {
+        closestDist = dist;
+        closest = { vessel, point: latest };
+      }
+    }
+
+    if (closest) {
+      const { vessel, point } = closest;
+      const name = vessel.name && vessel.name !== 'nan' && vessel.name.trim()
+        ? vessel.name
+        : `MMSI ${vessel.mmsi}`;
+      const sog = point.sog != null ? point.sog.toFixed(1) + ' kn' : '—';
+      tooltip.innerHTML = `
+        <div class="tt-name">${name}</div>
+        <div class="tt-row">Type &nbsp;&nbsp;<span>${vessel.type}</span></div>
+        <div class="tt-row">Speed <span>${sog}</span></div>
+        <div class="tt-row">MMSI &nbsp;<span>${vessel.mmsi}</span></div>
+      `;
+      tooltip.style.display = 'block';
+      const tx = e.clientX + 16;
+      const ty = e.clientY - 10;
+      tooltip.style.left = Math.min(tx, window.innerWidth - 230) + 'px';
+      tooltip.style.top  = Math.min(ty, window.innerHeight - 130) + 'px';
+      map.getContainer().style.cursor = 'crosshair';
+    } else {
+      tooltip.style.display = 'none';
+      map.getContainer().style.cursor = '';
+    }
+  });
+
+  map.getContainer().addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+
+  // ── UI: play/pause ────────────────────────────────────────────────────────
+  document.getElementById('btn-play').addEventListener('click', () => {
+    isPlaying ? pause() : play();
+  });
+
+  // ── UI: slider ────────────────────────────────────────────────────────────
+  document.getElementById('slider').addEventListener('input', e => {
+    pause();
+    currentTime = parseInt(e.target.value, 10);
+    updateTimeDisplay();
+    draw();
+  });
+
+  // ── UI: trail pills ───────────────────────────────────────────────────────
+  document.querySelectorAll('#trail-options .pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trail-options .pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const val = btn.dataset.trail;
+      trailLength = val === 'Infinity' ? Infinity : parseInt(val, 10);
+      draw();
+    });
+  });
+
+  // ── UI: ship type pills (built dynamically after data load) ───────────────
+  function buildTypeFilters(shipTypes) {
+    const container = document.getElementById('type-filters');
+    container.innerHTML = '';
+
+    // All / None meta pills — set once, refresh per-type pill state afterwards.
+    function syncTypePillsUI() {
+      container.querySelectorAll('.type-pill[data-type]').forEach(p => {
+        p.classList.toggle('active', activeTypes.has(p.dataset.type));
+      });
+    }
+
+    const allBtn = document.createElement('button');
+    allBtn.className = 'pill';
+    allBtn.textContent = 'All';
+    allBtn.addEventListener('click', () => {
+      activeTypes = new Set(shipTypes);
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(allBtn);
+
+    const noneBtn = document.createElement('button');
+    noneBtn.className = 'pill';
+    noneBtn.textContent = 'None';
+    noneBtn.addEventListener('click', () => {
+      activeTypes.clear();
+      syncTypePillsUI();
+      draw();
+    });
+    container.appendChild(noneBtn);
+
+    shipTypes.forEach(type => {
+      const color = TYPE_COLORS[type] || '#999';
+      const btn = document.createElement('button');
+      btn.className = 'type-pill active';
+      btn.dataset.type = type;
+      btn.innerHTML = `<span class="type-dot" style="background:${color}"></span>${type}`;
+      btn.addEventListener('click', () => {
+        if (activeTypes.has(type)) {
+          activeTypes.delete(type);
+          btn.classList.remove('active');
+        } else {
+          activeTypes.add(type);
+          btn.classList.add('active');
+        }
+        draw();
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  // ── Data load ─────────────────────────────────────────────────────────────
+  // Data is injected as window.VESSEL_DATA by the <script> tag below,
+  // so we can open this file directly via file:// without a server.
+  function onDataReady(data) {
+    allVessels = data.vessels;
+    if (Array.isArray(data.ports)) drawPortBboxes(data.ports);
+    buildTypeFilters(data.ship_types);
+    resizeCanvas();
+    updateTimeDisplay();
+    document.getElementById('loading').style.display = 'none';
+    play();
+  }
+
+  // Initial canvas size (before data arrives)
+  resizeCanvas();
+  </script>
+
+  <!-- Vessel data (generated by viz/prepare_map_data.py) -->
+  <!-- Sets window.VESSEL_DATA so this page works via file:// without a server -->
+  <script src="data/vessels_2026-02-01.js" onload="onDataReady(window.VESSEL_DATA)"
+          onerror="document.getElementById('loading').querySelector('p').textContent='Could not load data/vessels_2026-02-01.js — run viz/prepare_map_data.py first.'">
+  </script>
+</body>
+</html>

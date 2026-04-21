@@ -11,8 +11,10 @@ dist/
 build/
 
 # Data — never commit raw or processed files
+TO_DO.md
 data/raw/
 data/processed/
+data/*.db
 *.csv
 *.zip
 
@@ -29,3 +31,9 @@ Thumbs.db
 
 # Azure
 *.publishsettings
+
+# Claude Code
+.claude/
+
+# Viz generated data
+viz/data/

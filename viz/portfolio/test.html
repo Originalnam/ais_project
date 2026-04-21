@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio modules — local test</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="viz.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; padding: 32px 24px; }
+    h2 { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+         color: #38bdf8; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid rgba(56,189,248,.2); }
+    h2:first-of-type { margin-top: 0; }
+  </style>
+</head>
+<body>
+
+  <h2>Port Dashboard</h2>
+  <div id="chart-port"></div>
+  <script src="data/dashboard.js"></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="port-dashboard.js"></script>
+
+  <h2>Aarhus Zone Dashboard</h2>
+  <div id="chart-aarhus"></div>
+  <script src="data/aarhus_analytics.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="aarhus-dashboard.js"></script>
+
+  <h2>Danish Waters Map</h2>
+  <div id="chart-map" style="height:600px;"></div>
+  <script src="data/vessels_2026-02-01.js"></script>
+  <script src="map.js"></script>
+
+  <h2>Aarhus Zone Map</h2>
+  <div id="chart-aarhus-map" style="height:600px;"></div>
+  <script src="data/aarhus_vessels_feb2026.js"></script>
+  <script src="aarhus-map.js"></script>
+
+</body>
+</html>
